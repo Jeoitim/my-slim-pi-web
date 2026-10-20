@@ -2,6 +2,46 @@
 
 验证日期：2026-10-20。Windows x64 / PowerShell 7；开发 Node.js 24.20.0，Electron 44.9.1（内含 Node.js 24.22.0），electron-builder 26.15.3。后端运行在随包的独立 Node.js 24.20.0，不依赖 Electron ABI 或系统 Node。
 
+## 0.12.2-jeoitim.1 修复版
+
+当前产物：`dist-desktop/My Slim Pi Web Setup 0.12.2-jeoitim.1.exe`，142,560,171 字节（约 136 MiB）。SHA256：`49c0b9f7c2edff74fcc07e55d2f8246b3c6dc74410eaade41ad0c59d2f8eaf56`，同目录有 `.sha256` 文件。
+
+标题栏改为产品名称文字与平台按钮，移除品牌图标和额外全屏图标。终端 / 文件面板全宽和窄窗口覆盖时避开标题区，还原按钮可见、可点击。版本按上游基准加 fork 修订号命名；Web 和桌面均不查询上游应用更新。
+
+启动直接等待自有后端就绪，不再先导航到 Retry。Node 与窗口初始化并行，可选面板按需加载。生产启动采用 Next 生成的 standalone 序列化配置，修正 custom-server `prepare()` 忽略 `conf` 后向父目录寻找源码配置的问题。
+
+| 本轮检查 | 结果 |
+| --- | --- |
+| 类型 / 全仓库 ESLint / 隔离生产构建 | 通过；仍有既有 session export 动态依赖警告 |
+| 随包 Node / 真实 PTY | 通过 |
+| 桌面专项 | 5/5 |
+| 权限模式 / ASK / 远程边界 | 9/9，隔离 AgentRoot |
+| 更新版本逻辑及 API | 5/5；mock 确认 fork 接口没有任何上游 fetch |
+| 设置、布局、PWA、远程代理相关回归 | 15/15 |
+| 正常独立启动 | 3/3，无错误页导航、无更新检查请求、标题栏无 SVG 图标 |
+| 实际启动失败 | 缺失 Node 时窗口可见，Retry 可重新尝试 |
+| 最终打包运行目录 / 实际 NSIS 安装版 | 两者完整回归通过 |
+| 终端全宽 → 还原 | 1280px、850px 两种窗口均实际点击通过；另验证文件预览和真实终端输出 |
+| 强制退出 / 后端清理 / 再启动恢复 | 通过 |
+| 隔离安装 / 卸载 | 均退出 0，测试应用已清理 |
+
+实际安装目录位于 `.local/desktop-independent-validation/桌面 应用`，父目录故意放置会抛错的 `next.config.js`，安装后的应用仍正常启动并完成回归，确认不依赖父目录的源码配置。测试每轮使用独立 userData；终端输出检查通过既有输入 API 写入真实 PTY，再检查 xterm 展示。没有改动真实 Agent 数据或现存用户安装，没有推送或发布。
+
+启动测量由 `electron/scripts/startup-check.mjs` 完成，从进程拉起计到 React 控件可用；每次均使用空的 AgentRoot 和 userData：
+
+| 产物 | 第 1 次 | 第 2 次 | 第 3 次 |
+| --- | --- | --- | --- |
+| 原 0.1.0 | 54.945 s | 3.249 s | 3.151 s |
+| 最终修复版 | 3.734 s | 3.364 s | 3.214 s |
+
+新版中位数 3.364 秒，主要消除了首轮约一分钟的额外等待和正常启动的 Retry。后续短启动与旧版在同一量级。未重启操作系统或清空磁盘缓存，因此这是独立进程 / 空配置测试，不是重启后磁盘完全冷缓存的基准。
+
+本轮未重跑完整 Web 套件；此前非全绿结果保留在下面。Linux、macOS、真实 Cloudflare 和付费模型调用仍未重新验收。
+
+---
+
+以下为 **0.1.0 首版的历史记录**，保留用于回退及说明完整套件的已知验证范围。
+
 ## 产物和实际安装
 
 `dist-desktop/My Slim Pi Web Setup 0.1.0.exe`，约 135 MiB，NSIS 按用户安装；附 SHA256 文件。`dist-desktop/win-unpacked/MySlimPiWeb.exe` 是运行目录。

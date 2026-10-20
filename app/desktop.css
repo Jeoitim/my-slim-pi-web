@@ -3,11 +3,7 @@
 .desktop-titlebar-safe-area { display: flex; align-items: center; justify-content: space-between; height: 36px; margin-left: env(titlebar-area-x, 0px); width: env(titlebar-area-width, calc(100% - 140px)); padding: 0 12px; box-sizing: border-box; }
 .desktop-titlebar.is-darwin .desktop-titlebar-safe-area { margin-left: 88px; width: calc(100% - 100px); }
 .desktop-titlebar-brand { display: flex; align-items: center; gap: 7px; font-size: 12px; font-weight: 500; letter-spacing: .01em; }
-.desktop-titlebar-brand svg { color: var(--accent); width: 15px; height: 15px; } .desktop-titlebar-edition { color: var(--text-dim); font-weight: 400; }
-.desktop-titlebar-actions { display: flex; -webkit-app-region: no-drag; }
-.desktop-titlebar-actions button { display: grid; place-items: center; width: 30px; height: 28px; border: 0; border-radius: 5px; background: transparent; color: var(--text-muted); cursor: pointer; }
-.desktop-titlebar-actions button:hover { background: var(--bg-hover); color: var(--text); }
-.desktop-titlebar-actions button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.desktop-titlebar-edition { color: var(--text-dim); font-weight: 400; }
 .desktop-content { padding-top: 36px; }
 html[data-desktop] .settings-dialog-backdrop { top: 36px; }
 .desktop-port-row { display: flex; align-items: flex-end; gap: 12px; margin-top: 24px; }

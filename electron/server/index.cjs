@@ -39,9 +39,14 @@ process.on("message", message => {
       // Only the public verification key enters Next or subprocess environments.
       process.env.PI_DESKTOP_INGRESS_PUBLIC_KEY = keys.publicKey.export({ format: "der", type: "spki" }).toString("base64");
       const projectRequire = createRequire(join(root, "package.json"));
-      const next = projectRequire("next");
       const conf = dev ? undefined : JSON.parse(readFileSync(join(root, ".desktop/next/required-server-files.json"), "utf8")).config;
-      nextApp = next({ dev, dir: root, turbopack: dev || undefined, conf, hostname: "127.0.0.1" });
+      // Match Next's generated standalone bootstrap. Custom-server prepare() does
+      // not forward `conf` to its router; without this it searches parent folders
+      // for next.config.ts/.env and can compile source config on an installed launch.
+      if (conf) process.env.__NEXT_PRIVATE_STANDALONE_CONFIG = JSON.stringify(conf);
+      else delete process.env.__NEXT_PRIVATE_STANDALONE_CONFIG;
+      const next = projectRequire("next");
+      nextApp = next({ dev, dir: root, turbopack: dev || undefined, webpack: !dev || undefined, conf, hostname: "127.0.0.1" });
       await nextApp.prepare();
       listeners = createListeners({ token, privateKey: keys.privateKey, handler: nextApp.getRequestHandler(), upgrade: nextApp.getUpgradeHandler() });
       const internalUrl = await listeners.start();

@@ -1,5 +1,10 @@
 const STABLE_VERSION_PATTERN = /^(\d+)\.(\d+)\.(\d+)$/;
 
+/** Fork releases must never advertise the upstream package as an app upgrade. */
+export function shouldCheckUpstreamUpdate(version: string): boolean {
+  return STABLE_VERSION_PATTERN.test(version);
+}
+
 function parseStableVersion(version: string): [number, number, number] | null {
   const match = STABLE_VERSION_PATTERN.exec(version);
   if (!match) return null;

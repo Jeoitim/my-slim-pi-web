@@ -2,6 +2,7 @@
 
 ## Desktop host
 - `DesktopSettings` exists only with the isolated preload's `window.piDesktop` capability (`useDesktop`), never by user agent/URL. Writes use main-frame IPC, not Web APIs. Reuse ConfigButton/ConfigSwitch/ConfigField and three locales. Port edits bind before unbinding and never replace the Agent backend. See `docs/desktop.md`.
+- AppShell loads SettingsPanel only when Settings opens. Its toolbar uses the small `SettingsSectionIcon` module directly, so rendering a settings shortcut does not eagerly load all configuration panels.
 
 ## My Slim Pi fork
 - The Settings navigation exposes General, Models, Skills, My Slim Pi and MCP. The old Agents section id is retained for routing, but renders `MySlimPiSettings`; old Plugins links resolve there too. Shell, Web-owned subagent/profile and package-plugin controls are not valid for a managed My Slim Pi installation.

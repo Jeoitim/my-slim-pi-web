@@ -10,8 +10,10 @@ const require = createRequire(import.meta.url);
 const packaged = process.argv.includes("--packaged");
 const root = resolve(".");
 const area = join(root, ".local", packaged ? "桌面 安装版 验证" : "桌面 开发版 验证");
+const userData = join(area, "profiles", randomBytes(8).toString("hex"));
 await mkdir(join(area, "agent"), { recursive: true });
-await mkdir(join(area, "userData"), { recursive: true });
+await mkdir(userData, { recursive: true });
+await writeFile(join(area, "desktop-lazy-viewer.txt"), "Desktop lazy file viewer verification\n");
 const fixtureId = "d478334b-d3bd-49f6-85b4-e4c8c70f1dbb";
 const fixtureDir = join(area, "agent/sessions/desktop-e2e");
 await mkdir(fixtureDir, { recursive: true });
@@ -22,7 +24,7 @@ await writeFile(join(fixtureDir, `2026-10-20T00-00-00-000Z_${fixtureId}.jsonl`),
 const password = randomBytes(32).toString("hex");
 const fetch = (url, options = {}) => globalThis.fetch(url, { signal: AbortSignal.timeout(10_000), ...options });
 const environment = { ...process.env, PI_DESKTOP_NODE: process.execPath, PI_CODING_AGENT_DIR: join(area, "agent"),
-  PI_DESKTOP_TEST_USER_DATA: join(area, "userData"), PI_WEB_PASSWORD: password, PI_WEB_REMOTE: "1", PI_WEB_ALLOWED_HOSTS: "agent.example.test" };
+  PI_DESKTOP_TEST_USER_DATA: userData, PI_WEB_PASSWORD: password, PI_WEB_REMOTE: "1", PI_WEB_ALLOWED_HOSTS: "agent.example.test" };
 delete environment.ELECTRON_RUN_AS_NODE;
 const executablePath = packaged ? process.env.PI_DESKTOP_E2E_EXECUTABLE || join(root, "dist-desktop/win-unpacked/MySlimPiWeb.exe") : require("electron");
 const launchArgs = packaged ? [] : [join(root, "electron/main/index.cjs"), "--desktop-dev"];
@@ -116,8 +118,45 @@ try {
   await assert.rejects(fetch(status.externalUrl));
   assert.equal((await page.evaluate(() => window.piDesktop.getStatus())).phase, "running");
   await page.screenshot({ path: join(area, "desktop-final.png") });
-  const persisted = JSON.parse(await readFile(join(area, "userData/desktop-settings.json"), "utf8"));
+  const persisted = JSON.parse(await readFile(join(userData, "desktop-settings.json"), "utf8"));
   assert.equal(persisted.externalControl, false); assert.equal(persisted.port, port);
+  // Opening optional panels must still work after moving them off the startup path.
+  await page.locator(".settings-dialog-close").click();
+  await page.goto(`${privateOrigin}/?session=${fixtureId}`);
+  await page.getByText("Desktop shared-backend verification", { exact: true }).waitFor();
+  const files = page.locator("#session-sidebar-panel-files");
+  const fold = files.locator(".sidebar-files-section-toggle");
+  await fold.waitFor();
+  if (await fold.getAttribute("aria-expanded") !== "true") await fold.click();
+  await files.getByText("desktop-lazy-viewer.txt", { exact: true }).click();
+  await page.locator("#file-panel").getByText("Desktop lazy file viewer verification", { exact: true }).waitFor();
+  const [terminalResponse] = await Promise.all([
+    page.waitForResponse(response => new URL(response.url()).pathname === "/api/terminal" && response.request().method() === "POST"),
+    page.getByRole("button", { name: "打开工作区终端", exact: true }).click(),
+  ]);
+  const terminal = await terminalResponse.json();
+  await page.locator(".terminal-panel:visible .is-ready").waitFor();
+  for (const width of [1280, 850]) {
+    await app.evaluate(({ BrowserWindow }, width) => BrowserWindow.getAllWindows()[0].setSize(width, 840), width);
+    await page.locator(".file-panel-expand-button").click();
+    const restore = page.getByRole("button", { name: "还原文件面板宽度", exact: true });
+    const restoreBox = await restore.boundingBox();
+    const titleBox = await page.locator(".desktop-titlebar").boundingBox();
+    assert.ok(restoreBox.y >= titleBox.y + titleBox.height - 1,
+      `Expanded controls must stay below the titlebar (button ${restoreBox.y}, titlebar ${titleBox.y + titleBox.height})`);
+    await page.screenshot({ path: join(area, `desktop-expanded-terminal-${width}.png`) });
+    await restore.click();
+    assert.equal(await page.locator(".file-panel-expand-button").getAttribute("aria-pressed"), "false");
+  }
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].setSize(1280, 840));
+  await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].focus());
+  const command = process.platform === "win32" ? 'cmd /v:on /c "set DESKTOP_LAZY_TOKEN=desktop-lazy-&echo !DESKTOP_LAZY_TOKEN!terminal-ok"' : "printf '%s%s\\n' desktop-lazy- terminal-ok";
+  const inputStatus = await page.evaluate(async ({ id, command }) => (await fetch(`/api/terminal/${id}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "input", data: `${command}\r` }),
+  })).status, { id: terminal.id, command });
+  assert.equal(inputStatus, 200);
+  await page.waitForFunction(() => [...document.querySelectorAll(".terminal-panel")].some(panel =>
+    panel.getBoundingClientRect().width > 0 && panel.querySelector(".xterm-rows")?.textContent.includes("desktop-lazy-terminal-ok")), undefined, { polling: 100 });
   console.log(JSON.stringify({ packaged, passed: true, native, screenshot: join(area, "desktop-final.png") }));
 } catch (error) {
   const page = (await app.windows())[0];

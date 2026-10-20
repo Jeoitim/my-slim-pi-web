@@ -1,5 +1,12 @@
 # Mobile and browser behavior
 
+## Desktop startup
+- Electron starts the backend alongside native window creation, then loads the application directly after authenticated readiness. The window first appears when its content is ready to paint; the Retry page is reserved for actual startup/navigation failures. Do not introduce a fixed startup sleep or load the failure page as a placeholder.
+- Production must set Next's generated standalone serialized configuration before requiring Next. In this version, custom-server `prepare()` does not forward `conf` to router initialization, so the option alone lets it search parent folders for source configuration and environment files. Installed startup must work beneath an unrelated/invalid parent Next config.
+- The desktop titlebar contains the product name as text and platform window controls only; no brand icon or extra fullscreen icon. Keep fullscreen in the native controls/menu/F11. This does not change browser controls.
+- Fixed right panels (full-width and compact desktop overlay) start below `--desktop-titlebar-height`; subtract that height from a full-width panel's viewport height too. Otherwise its tabs, restore and close controls sit behind the caption bar. Do not take Escape away from the terminal to compensate for inaccessible buttons.
+- AppShell loads the terminal, file viewer and subagent viewer when opened. Keep xterm out of the initial client entry. Use `node electron/scripts/startup-check.mjs` against a packaged app for three process launches with empty isolated profiles; the report measures launch-to-hydrated-UI, not just a backend port opening.
+
 ## Mobile software keyboard (`hooks/useViewportHeight.ts`)
 - While an editor has focus and the visual viewport is more than `KEYBOARD_MIN_HEIGHT_PX` (60px) shorter than `innerHeight / scale`, the hook writes `visualViewport.height` to `--app-viewport-height`; smaller shrinks are Safari toolbars. Always compare against that zoom-corrected height, or iOS auto-zoom and pinch zoom leave the composer behind the keyboard.
 - WebKit settles the shrunken height only after the keyboard animation, often without another `resize` (bugs.webkit.org 265578), and an IME candidate bar resizes the keyboard with no viewport event at all. So every trigger, composition/input/keyup events on a focused editor included, starts one non-restarting chain of re-reads (`SETTLE_DELAYS_MS`). Reading once per event keeps the full-screen height, and `scrollTo(0, 0)` then fights the page scrolling to the caret: a jittering composer.

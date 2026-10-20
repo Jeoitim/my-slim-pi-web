@@ -10,6 +10,7 @@ export interface ServiceStatus {
   passwordConfigured: boolean;
   version: string;
   nodeVersion: string;
+  startup?: { backendReadyMs: number; healthReadyMs: number };
 }
 export interface DesktopBridge {
   readonly platform: "win32" | "darwin" | "linux";

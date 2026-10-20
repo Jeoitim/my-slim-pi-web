@@ -45,7 +45,7 @@ else {
 function createWindow() {
   const dark = nativeTheme.shouldUseDarkColors;
   window = new BrowserWindow({
-    width: 1280, height: 840, minWidth: 760, minHeight: 520,
+    width: 1280, height: 840, minWidth: 760, minHeight: 520, show: false,
     title: "My Slim Pi Web", backgroundColor: dark ? "#242424" : "#f5f5f5",
     icon: iconPath,
     titleBarStyle: "hidden",
@@ -56,6 +56,7 @@ function createWindow() {
       contextIsolation: true, sandbox: true, webSecurity: true, spellcheck: true,
       partition: "persist:pi-desktop", devTools: !app.isPackaged },
   });
+  window.once("ready-to-show", () => { if (!quitting) window.show(); });
   window.webContents.on("will-attach-webview", event => event.preventDefault());
   window.webContents.on("will-navigate", (event, url) => {
     if (isAppUrl(url, service.origin)) return;
@@ -114,9 +115,14 @@ async function openWeb() {
 }
 async function restart() {
   await service.stop();
+  return connect();
+}
+async function connect(started = service.start()) {
   try {
-    await service.start();
-    try { await service.configure(settings); } catch (error) { service.state({ error: error.message }); }
+    await started;
+    if (settings.externalControl) {
+      try { await service.configure(settings); } catch (error) { service.state({ error: error.message }); }
+    }
     await window.loadURL(service.origin);
   } catch (error) { await window.loadFile(errorPage); throw error; }
 }
@@ -130,6 +136,9 @@ async function boot() {
   service = new DesktopService({ node, root, dev, version,
     entry: app.isPackaged ? join(process.resourcesPath, "desktop-host/electron/server/index.cjs") : undefined });
   service.on("status", updateTray);
+  // Start Node while Chromium creates its window and native menus.
+  const started = service.start();
+  void started.catch(() => {});
   createWindow();
   Menu.setApplicationMenu(Menu.buildFromTemplate([
     ...(process.platform === "darwin" ? [{ role: "appMenu" }] : []),
@@ -152,8 +161,7 @@ async function boot() {
     tray.setToolTip("My Slim Pi Web"); tray.on("double-click", () => window?.show()); updateTray();
   } catch { tray = undefined; }
   registerIpc();
-  await window.loadFile(errorPage);
-  await serial(restart).catch(() => {});
+  await serial(() => connect(started)).catch(() => {});
 }
 function registerIpc() {
   const handle = (name, action) => ipcMain.handle(`desktop:${name}`, (event, ...args) => {

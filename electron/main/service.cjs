@@ -2,6 +2,23 @@ const { fork } = require("node:child_process");
 const { randomBytes } = require("node:crypto");
 const { join } = require("node:path");
 const { EventEmitter } = require("node:events");
+const { get } = require("node:http");
+const { performance } = require("node:perf_hooks");
+
+function checkHealth(origin, token) {
+  return new Promise((resolve, reject) => {
+    const request = get(`${origin}/__desktop-health`, { headers: { "x-pi-desktop-token": token } }, response => {
+      let body = "";
+      response.setEncoding("utf8");
+      response.on("data", data => { body += data; if (body.length > 64) request.destroy(new Error("Invalid health response")); });
+      response.once("end", () => response.statusCode === 200 && body === "ready" ? resolve() : reject(new Error("Local service health check failed")));
+      response.once("error", reject);
+    });
+    const deadline = setTimeout(() => request.destroy(new Error("Local service health check timed out")), 5000);
+    request.once("close", () => clearTimeout(deadline));
+    request.once("error", reject);
+  });
+}
 
 class DesktopService extends EventEmitter {
   constructor({ node, root, dev, version, entry = join(__dirname, "../server/index.cjs") }) {
@@ -15,6 +32,7 @@ class DesktopService extends EventEmitter {
   }
   state(patch) { Object.assign(this.status, patch); this.emit("status", this.status); }
   async start() {
+    const began = performance.now();
     if (this.child) throw new Error("Service is already started");
     this.state({ phase: "starting", error: null });
     const environment = { ...process.env };
@@ -72,9 +90,10 @@ class DesktopService extends EventEmitter {
         child.once("error", onError); child.once("exit", onExit); child.on("message", onMessage);
         child.send({ type: "start", root: this.root, dev: this.dev, token: this.token });
       });
-      const response = await fetch(`${this.origin}/__desktop-health`, { headers: { "x-pi-desktop-token": this.token }, signal: AbortSignal.timeout(5000) });
-      if (response.status !== 200 || await response.text() !== "ready") throw new Error("Local service health check failed");
-      this.state({ phase: "running" });
+      const backendReadyMs = Math.round(performance.now() - began);
+      // Native HTTP avoids initializing a general fetch stack for one loopback probe.
+      await checkHealth(this.origin, this.token);
+      this.state({ phase: "running", startup: { backendReadyMs, healthReadyMs: Math.round(performance.now() - began) } });
     } catch (error) {
       await this.stop();
       this.state({ phase: "error", error: error.message });

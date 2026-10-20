@@ -7,6 +7,7 @@
 - Bring upstream changes into `my-slim-pi-web` through a clean, independent pull request: create a focused integration branch from `my-slim-pi-web`, merge the reviewed upstream revision there, resolve conflicts, and run the relevant Web, permission, remote-access, and desktop checks. Describe the upstream revision and compatibility impact. Do not mix unrelated feature work into that PR or merge upstream directly into the development branch.
 - The `upstream` remote is read-only for this workflow; `origin` is the fork. Remote pushes, PR creation, GitHub default-branch changes, and releases require the user's authorization. Local `init.defaultBranch` is `my-slim-pi-web`; it does not change GitHub's default branch. When publishing is authorized, publish this branch and set the fork's GitHub default to it rather than pointing `origin/HEAD` at an unpublished branch.
 - Desktop code lives in `electron/`; see `docs/desktop.md`. Keep Agent ownership in the existing Next.js backend. Build desktop production assets into `.desktop/`, never into the active development `.next/` tree.
+- Fork versions use `<reviewed-upstream-version>-jeoitim.<revision>` (currently `0.12.2-jeoitim.1`). Increment the fork revision for fork releases on that upstream baseline; reset it to 1 after integrating a newer upstream release. Keep package.json and package-lock.json in sync. Fork builds must not query or offer the upstream npm/GitHub app update channel; upstream synchronization stays in the independent PR workflow above.
 
 ## Quick Start
 

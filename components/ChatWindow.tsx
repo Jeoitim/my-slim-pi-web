@@ -31,6 +31,7 @@ import { useIsMobile } from "@/hooks/useIsMobile";
 import { useScrollbarVisibility } from "@/hooks/useScrollbarVisibility";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import type { AppUpdateResponse } from "@/lib/api-types";
+import { shouldCheckUpstreamUpdate } from "@/lib/app-update";
 import type { ToolEntry } from "@/lib/tool-presets";
 import type { SettingsSection } from "@/lib/settings-navigation";
 import { getTranscriptNotices, summarizeCacheMisses, type CacheMissSummary } from "@/lib/transcript-notices";
@@ -104,6 +105,7 @@ let appUpdateCheck: Promise<AppUpdateResponse | null> | null = null;
 let appUpdateFound: AppUpdateResponse | null = null;
 
 function checkAppUpdate(): Promise<AppUpdateResponse | null> {
+  if (!shouldCheckUpstreamUpdate(process.env.NEXT_PUBLIC_APP_VERSION ?? "")) return Promise.resolve(null);
   appUpdateCheck ??= fetch("/api/app-update")
     .then(async (response) => {
       if (!response.ok) return null;
