@@ -17,6 +17,9 @@ try {
 const gfmAutolinkEmailLoader = join(configDir, "lib/gfm-autolink-email-loader.cjs");
 
 const nextConfig: NextConfig = {
+  // Desktop release/dev output never contends with the browser's .next/dev lock.
+  ...(process.env.PI_DESKTOP_BUILD === "1" ? { distDir: process.env.PI_DESKTOP_DEV === "1" ? ".desktop/dev" : ".desktop/next",
+    ...(process.env.PI_DESKTOP_DEV === "1" ? {} : { output: "standalone" as const }) } : {}),
   agentRules: false,
   devIndicators: false,
   outputFileTracingRoot: configDir,

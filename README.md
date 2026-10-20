@@ -27,6 +27,18 @@ export PI_CODING_AGENT_DIR="/path/to/agent"
 
 生产运行：停止开发服务器后执行 `npm run build`，再执行 `npm start`。默认仅监听本机。可选远程访问见 [Cloudflare Tunnel + Access](docs/remote-access.md)。
 
+## Electron 桌面版
+
+桌面与 Web 共用现有界面、权限系统和 Agent 数据。窗口按钮内嵌于应用顶部并跟随主题；“设置 → 桌面应用”管理受认证保护的本地 Web 入口、端口和后台服务。
+
+```sh
+npm run desktop:dev
+npm run desktop:build
+npm run desktop:pack
+```
+
+Windows x64 生成 NSIS 安装包，随包包含独立 Node.js 24 和 npm/npx。桌面构建隔离在 `.desktop/`；浏览器仍使用原命令。详情见 [桌面文档](docs/desktop.md)。
+
 ## 本项目设置
 
 - 对话工具栏切换 **AUTO / ACT / ASK / PLAN**，显示当前会话的真实权限状态。

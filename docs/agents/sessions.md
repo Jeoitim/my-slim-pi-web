@@ -1,5 +1,8 @@
 # Sessions, branching and live events
 
+## Desktop shell
+- `DesktopShell` wraps the same AppShell with a themed 36px drag area and native caption overlays. Reserve native button safe areas and opt interactive elements out of dragging. AppShell subtracts `--desktop-titlebar-height` only with preload present. Never create a second session registry for external control; desktop listeners/signing live in `electron/`.
+
 ## My Slim Pi branding
 The sidebar brand and new-session hero use `PiLogo`, with the exact startup block geometry from My Slim Pi's `assets/pi-warm.svg`. Inline SVG uses `currentColor` and the app's `--accent`, so every saved palette and system theme updates it without image swaps. The sidebar retains its accessible name and click-to-show versions; its fit callback also follows icon/version changes. The upstream text-brand description below is historical for this fork. Next's development indicator is disabled with `devIndicators: false`; error reporting remains available.
 

@@ -37,7 +37,14 @@
     "test": "node --experimental-strip-types --test \"app/**/*.test.mjs\" \"components/**/*.test.mjs\" \"hooks/**/*.test.mjs\" \"lib/**/*.test.mjs\" \"public/**/*.test.mjs\"",
     "typecheck": "tsc --noEmit",
     "test:permissions": "node --experimental-strip-types --test lib/permission-mode*.test.mjs lib/remote-access*.test.mjs lib/my-slim-pi.integration.test.mjs",
-    "test:remote": "node e2e/remote-access.mjs"
+    "test:remote": "node e2e/remote-access.mjs",
+    "desktop:dev": "node electron/scripts/dev.mjs",
+    "desktop:build": "node electron/scripts/build.mjs",
+    "desktop:pack": "node electron/scripts/pack.mjs",
+    "desktop:pack:dir": "node electron/scripts/pack.mjs --dir",
+    "test:desktop": "node --experimental-strip-types --test electron/tests/*.test.mjs",
+    "test:desktop:app": "node electron/scripts/e2e.mjs",
+    "test:desktop:packaged": "node electron/scripts/e2e.mjs --packaged"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "1.3.0",
@@ -71,6 +78,8 @@
     "@types/semver": "7.8.0",
     "@types/web-push": "^3.6.4",
     "ansi_up": "^6.0.6",
+    "electron": "44.9.1",
+    "electron-builder": "26.15.3",
     "eslint": "^9",
     "eslint-config-next": "16.3.8",
     "jiti": "^2.7.0",

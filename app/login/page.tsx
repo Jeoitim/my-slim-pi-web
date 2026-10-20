@@ -4,6 +4,7 @@ import Image from "next/image";
 import { useState, type FormEvent } from "react";
 import { I18nProvider, useI18n } from "@/hooks/useI18n";
 import { safeLoginDestination } from "@/lib/login-destination";
+import { DesktopShell } from "@/components/DesktopShell";
 
 function safeDestination(): string {
   const destination = new URLSearchParams(window.location.search).get("next");
@@ -85,5 +86,5 @@ function LoginForm() {
 }
 
 export default function LoginPage() {
-  return <I18nProvider><LoginForm /></I18nProvider>;
+  return <I18nProvider><DesktopShell><LoginForm /></DesktopShell></I18nProvider>;
 }

@@ -1,6 +1,22 @@
 import { isIP } from "node:net";
+import { verify } from "node:crypto";
+
+/** Only desktop listeners hold the private signing key; subprocesses see a public key. */
+export function desktopIngress(request: Request, publicKey = process.env.PI_DESKTOP_INGRESS_PUBLIC_KEY): "internal" | "external" | null {
+  if (!publicKey) return null;
+  const match = /^(internal|external)\.([A-Za-z0-9+/=]+)$/.exec(request.headers.get("x-pi-desktop-ingress") ?? "");
+  if (!match) return null;
+  try {
+    return verify(null, Buffer.from(`pi-desktop-v1:${match[1]}`), {
+      key: Buffer.from(publicKey, "base64"), format: "der", type: "spki",
+    }, Buffer.from(match[2], "base64")) ? match[1] as "internal" | "external" : null;
+  } catch { return null; }
+}
 
 export function isRemoteRequest(request: Request, environment: NodeJS.ProcessEnv = process.env): boolean {
+  if (environment.PI_DESKTOP_INGRESS_PUBLIC_KEY) {
+    return desktopIngress(request, environment.PI_DESKTOP_INGRESS_PUBLIC_KEY) !== "internal";
+  }
   if (environment.PI_WEB_REMOTE === "1") return true;
   try {
     const hostname = new URL("http://" + request.headers.get("host")).hostname.toLowerCase();

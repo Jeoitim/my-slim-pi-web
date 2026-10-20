@@ -2150,7 +2150,7 @@ export function AppShell() {
     <div style={{
       display: "flex",
       width: "100%",
-      height: "var(--app-viewport-height, 100dvh)",
+      height: "calc(var(--app-viewport-height, 100dvh) - var(--desktop-titlebar-height, 0px))",
       paddingLeft: "env(safe-area-inset-left)",
       paddingRight: "env(safe-area-inset-right)",
       overflow: "hidden",

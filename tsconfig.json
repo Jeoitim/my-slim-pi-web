@@ -33,11 +33,17 @@
     "**/*.ts",
     "**/*.tsx",
     ".next/types/**/*.ts",
-    ".next/dev/types/**/*.ts"
+    ".next/dev/types/**/*.ts",
+    ".desktop/next/types/**/*.ts",
+    ".desktop/next/dev/types/**/*.ts",
+    ".desktop/dev/types/**/*.ts",
+    ".desktop/dev/dev/types/**/*.ts"
   ],
   "exclude": [
     "node_modules",
     "demo",
-    ".local"
+    ".local",
+    ".desktop",
+    "dist-desktop"
   ]
 }

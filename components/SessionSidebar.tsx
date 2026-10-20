@@ -128,14 +128,6 @@ const FILE_MANAGER_ERROR_KEYS: Record<string, string> = {
   "unsupported-platform": "sidebar.openInExplorerUnsupported",
 };
 
-declare global {
-  interface Window {
-    piDesktop?: {
-      selectDirectory: () => Promise<string | null>;
-    };
-  }
-}
-
 /**
  * A key of the files' actions: in the files section's header row below the
  * sessions, or in the files tab's row under the project and worktree.

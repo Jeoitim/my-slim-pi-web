@@ -1,5 +1,8 @@
 # Settings panels: plugins, skills and shared blocks
 
+## Desktop host
+- `DesktopSettings` exists only with the isolated preload's `window.piDesktop` capability (`useDesktop`), never by user agent/URL. Writes use main-frame IPC, not Web APIs. Reuse ConfigButton/ConfigSwitch/ConfigField and three locales. Port edits bind before unbinding and never replace the Agent backend. See `docs/desktop.md`.
+
 ## My Slim Pi fork
 - The Settings navigation exposes General, Models, Skills, My Slim Pi and MCP. The old Agents section id is retained for routing, but renders `MySlimPiSettings`; old Plugins links resolve there too. Shell, Web-owned subagent/profile and package-plugin controls are not valid for a managed My Slim Pi installation.
 - `MySlimPiSettings` reuses General's section styles and `ConfigSwitch` / `ConfigButton`. `/api/my-slim-pi/settings` changes only the existing Agent `reviewer.humanFallback` field under a file lock and atomic write. Unsupported compiled extensions leave the switch disabled. Background models dispatch the registered `/subagents` command and close Settings so ordinary Extension UI can appear. See [permissions](../permissions.md) and [compatibility](../compatibility.md).

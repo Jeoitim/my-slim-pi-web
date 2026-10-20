@@ -3,9 +3,10 @@ import typescript from "eslint-config-next/typescript";
 
 const eslintConfig = [
   // demo/ is a separate Next.js project with its own lint config.
-  { ignores: ["demo/**", ".local/**"] },
+  { ignores: ["demo/**", ".local/**", ".desktop/**", "dist-desktop/**"] },
   ...coreWebVitals,
   ...typescript,
+  { files: ["electron/**/*.cjs"], rules: { "@typescript-eslint/no-require-imports": "off" } },
   {
     rules: {
       "react-hooks/immutability": "off",

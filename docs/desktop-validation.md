@@ -1,0 +1,53 @@
+# Desktop 交付与验证记录
+
+验证日期：2026-10-20。Windows x64 / PowerShell 7；开发 Node.js 24.20.0，Electron 44.9.1（内含 Node.js 24.22.0），electron-builder 26.15.3。后端运行在随包的独立 Node.js 24.20.0，不依赖 Electron ABI 或系统 Node。
+
+## 产物和实际安装
+
+`dist-desktop/My Slim Pi Web Setup 0.1.0.exe`，约 135 MiB，NSIS 按用户安装；附 SHA256 文件。`dist-desktop/win-unpacked/MySlimPiWeb.exe` 是运行目录。
+
+安装器退出码 **0**，实际安装到仓库 `.local/桌面 安装 验证应用`（中文与空格路径），随后启动**安装目录里的 exe**通过端到端验证。测试结束已运行卸载器，退出码 **0**，确认测试应用已移除，保留安装包和运行目录。不是只验证开发窗口或解包目录。
+
+安装包 SHA256：`58c7bbb43306cd207ee565d8fdb400a2164ef6abd582cfe22d2c8325f37c7757`。
+
+测试使用独立 AgentRoot、userData、随机密码和测试会话，没有复制真实凭据、改动用户 Agent、修改 PATH、推送或发布。首版未配置产品签名证书。Linux AppImage、macOS 窗口/安装、真实 Cloudflare Access/Tunnel 和付费模型调用未验证。
+
+## 检查结果
+
+| 检查 | 实际结果 |
+| --- | --- |
+| TypeScript / ESLint | 通过，无错误/警告 |
+| Next.js 生产构建 | 通过，隔离在 `.desktop/next`；保留既有 session export 动态依赖警告 |
+| 随包 Node / 真实 node-pty | 通过，真实 shell 输出及退出；ConPTY 验证进程显式退出释放 DLL |
+| 桌面专项 | **5/5**，含缺少运行时、配置、IPC、签名和双入口 |
+| 设置/远程/Next/i18n/PWA 回归 | **35/35** |
+| 真实隔离 Agent 四模式/ASK/远程边界 | **9/9**，原测试 provider，无付费模型 |
+| Electron 开发窗口 | 通过 |
+| Windows 打包运行目录 | 通过 |
+| NSIS 实际安装后的应用 | 通过 |
+| 主进程强制退出、后端清理、再次启动恢复 | 通过，使用实际 Electron main PID |
+| 隔离安装卸载 | 通过，应用已清理 |
+
+实际窗口覆盖密码登录、中文设置、隔离参数、真实测试会话在两入口中的一致读取、内部维护 API 可读/外部 403、Host 白名单、关闭固定入口后内部继续运行、关闭窗口留托盘、重复启动只唤回同一宿主、配置持久化和退出后监听器消失。专项测试另覆盖端口冲突保留旧入口、切换端口、SSE 分块和损坏配置不覆写。
+
+没有在桌面中再次执行真实付费聊天或逐个重新批准/拒绝所有扩展；四模式与 ASK 的真实 SDK 路径由原隔离集成测试验证，桌面加载同一 React 审批组件和 Next 后端。不能把这两类验证混称为所有桌面 Agent 场景都已人工验收。
+
+## 完整 Web 套件
+
+`npm test`：**2797 项，2729 通过、48 失败、1 取消、19 跳过**。`mcp-read-only-policy.integration` 与 `subagent-mcp.integration` 的进程长期不结束；终止这两个已确认属于本次运行的进程后才获得汇总。不能记为无挂起的全绿执行。
+
+失败包含先前已记录的 Windows ESM/POSIX 路径、符号链接/只读语义、PTY、文件占用、静态源码断言和 MCP 时序问题，见 [compatibility.md](compatibility.md)。本次没有重新完成逐项上游基线比较，不把全部失败宣称为已证明无关。与本次接点直接相关的回归、权限和桌面检查另有明确通过结果。
+
+## 文件范围
+
+| 范围 | 新增或修改文件 |
+| --- | --- |
+| 宿主 | `electron/main/{index,service,security,settings}.cjs`、`electron/preload/index.cjs`、`electron/shared/contracts.d.ts` |
+| 后端入口 | `electron/server/{index,listeners}.cjs`；`lib/remote-access.ts` 增加签名验证，原规则保留 |
+| 错误页 | `electron/ui/error.{html,css,js}` |
+| 打包/测试 | `electron/scripts/{dev,build,pack,stage-host,windows-tools,e2e,crash-check}.mjs`、`verify-runtime.cjs`、`electron/tests/desktop.test.mjs`、`electron/assets/icon.svg`、`electron-builder.cjs` |
+| UI | 新增 DesktopShell、DesktopSettings、useDesktop、app/desktop.css；调整 page/login/layout、AppShell、PwaRegistration、SettingsPanel、settings-navigation；删除 SessionSidebar 的重复 bridge 类型 |
+| 翻译/配置 | 三语言 messages、package.json/lock、next.config、tsconfig、eslint.config、.gitignore |
+| 文档 | README、AGENTS、desktop/desktop-validation、upstream、三个相关 agents notes |
+
+没有为桌面改写 rpc-manager、权限引擎或会话存储。维护路径为本地 `upstream` 纯跟踪 → 独立集成 PR → `my-slim-pi-web`。本地分支及默认配置已调整；远程默认分支未改，未推送新分支。详见 [AGENTS.md](../AGENTS.md) 和 [desktop.md](desktop.md)。
