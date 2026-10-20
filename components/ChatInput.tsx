@@ -33,6 +33,8 @@ import { useI18n } from "@/hooks/useI18n";
 import { useChatAppearance } from "@/hooks/useChatAppearance";
 import { useFontPreferences } from "@/hooks/useFontPreferences";
 import type { ToolPreset } from "@/lib/tool-presets";
+import { PermissionModeControl } from "./PermissionModeControl";
+import type { PermissionMode } from "@/lib/permission-mode";
 import { SelectorRow } from "./SelectorRow";
 import { ModelSelector, type ModelSelectorOption } from "./ModelSelector";
 
@@ -72,6 +74,8 @@ interface Props {
   compactError?: string | null;
   onDismissCompactError?: () => void;
   compactResult?: CompactResultInfo | null;
+  permissionMode?: PermissionMode | null;
+  onPermissionModeChange?: (mode: PermissionMode) => Promise<void>;
   toolPreset?: ToolPreset;
   onToolPresetChange?: (preset: ToolPreset) => void;
   thinkingLevel?: "auto" | "off" | "minimal" | "low" | "medium" | "high" | "xhigh" | "max";
@@ -663,7 +667,7 @@ export function ModelScopeWarningBanner({ warnings }: { warnings?: string[] }) {
 // chat around it re-renders through both.
 export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatInput({
   onSend, onAbort, onSteer, onFollowUp, isStreaming, model, isAutoModelSelection, modelNames, modelList, modelError, modelScopeWarnings, onModelChange, modelSwitching,
-  defaultModel, onSetDefaultModel,
+  defaultModel, onSetDefaultModel, permissionMode, onPermissionModeChange,
   onCompact, onAbortCompaction, isCompacting, compactError, onDismissCompactError, compactResult, toolPreset, onToolPresetChange,
   thinkingLevel, isAutoThinkingSelection = false, onThinkingLevelChange, availableThinkingLevels, thinkingLevelMap,
   savedDefaultThinkingLevel, onSetDefaultThinkingLevel,
@@ -2487,6 +2491,8 @@ export const ChatInput = memo(forwardRef<ChatInputHandle, Props>(function ChatIn
             position: "relative",
             marginLeft: isMobile ? 0 : "auto",
           }}>
+            {onPermissionModeChange && <PermissionModeControl key={draftKey ?? cwd ?? "new"}
+              mode={permissionMode ?? null} disabled={isStreaming} onChange={onPermissionModeChange} />}
             {isMobile && (
               <button
                 type="button"

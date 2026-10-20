@@ -1,3 +1,5 @@
+import { isMySlimPiAgent } from "@/lib/my-slim-pi";
+import { getAgentDir as slimAgentDir } from "@earendil-works/pi-coding-agent";
 import { NextResponse } from "next/server";
 import { hasJsonContentType, isApiRequestAllowed } from "@/lib/request-security";
 import {
@@ -22,6 +24,7 @@ export async function GET() {
 }
 
 export async function PUT(req: Request) {
+  if (isMySlimPiAgent(slimAgentDir())) return NextResponse.json({error:"My Slim Pi owns this configuration; use Settings › My Slim Pi"}, {status:403});
   if (!isApiRequestAllowed(req)) {
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   }

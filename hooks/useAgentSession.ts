@@ -1,5 +1,6 @@
 "use client";
 
+import { type PermissionMode } from "@/lib/permission-mode";
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo, useReducer } from "react";
 import type {
   AgentMessage,
@@ -22,7 +23,7 @@ import {
   snapshotCoversLoadedEntries,
 } from "@/lib/session-view-cache";
 import { clearDraft, getDraft, rekeyDraft, restoreDraftSubmission } from "@/lib/draft-store";
-import { getPreferredToolPreset, setPreferredToolPreset } from "@/lib/tool-preset-preference";
+import { setPreferredToolPreset } from "@/lib/tool-preset-preference";
 import { CONFIGURED_TOOL_PRESET, getPresetFromToolNames, getToolNamesForPreset, type ToolEntry, type ToolPreset } from "@/lib/tool-presets";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import { mergeSessionStats, type SessionFileStats } from "@/lib/session-stats";
@@ -502,7 +503,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   useLayoutEffect(() => {
     if (!existingSessionId && (!isNew || sessionIdRef.current)) return;
-    setToolPresetState(getPreferredToolPreset());
+    setToolPresetState(CONFIGURED_TOOL_PRESET);
   }, [existingSessionId, isNew, setToolPresetState]);
 
   const onNewSessionChoicesChange = opts.onNewSessionChoicesChange;
@@ -944,6 +945,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       ensuringNewSessionRef.current = null;
     }
   }, [isNew, newSessionCwd, toolPreset]);
+
+  const handlePermissionModeChange = useCallback(async (mode: PermissionMode) => {
+    const id = await ensureNewSession();
+    if (!id) throw new Error("Session is unavailable");
+    const result = await sendAgentCommand<{ extensionStatuses: ExtensionStatusItem[] }>(id, { type: "set_permission_mode", mode });
+    // The server awaited the existing extension command and read its published state.
+    if (sessionIdRef.current === id) setExtensionStatuses(result.extensionStatuses);
+  }, [ensureNewSession]);
 
   // Opening the System or Tools panel may initialize an otherwise dormant
   // session. This is deliberately a non-prompt command: it creates no message
@@ -2802,7 +2811,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     cancelEdit: editEntryId ? cancelEdit : undefined,
     addNotice,
     setNoticePaused: setPausedNoticeId,
-    handleToolPresetChange, handleThinkingLevelChange, handleSetDefaultModel, handleSetDefaultThinkingLevel, loadTools, loadSlashCommands, setActiveLeafId, setData, setMessages, loadContext,
+    handlePermissionModeChange, handleToolPresetChange, handleThinkingLevelChange, handleSetDefaultModel, handleSetDefaultThinkingLevel, loadTools, loadSlashCommands, setActiveLeafId, setData, setMessages, loadContext,
     scrollToBottom, scrollUserMsgToTop, scrollToMessage,
     dispatch, setAgentRunning, setForkingEntryId,
     bashRunning, pendingBash,

@@ -1,5 +1,8 @@
 # Tool selection and built-in extensions
 
+## My Slim Pi managed installations
+`startRpcSession()` detects the existing My Slim Pi installation markers. For those sessions, timrt-suite owns tool exposure and delegation: Web preset requests and persisted selections are ignored, tool-replacement commands are rejected, and the Web subagent/read-only MCP extensions are not injected. The UI exposes the Agent's four permission modes instead. Legacy tool-settings writes return 403 for managed roots; the Shell and Code mode controls are hidden. Generic upstream fixtures retain their original behavior. See [permissions](../permissions.md).
+
 ## New session tool preset
 Tool names are passed at session creation (`POST /api/agent/new` → `toolNames[]`) and persisted in versioned `pi-web:tool-selection` custom entries (ADR 0002). No entry, or a later `cleared: true` one, means no pin: the session follows pi's `defaultTools`, as the `configured` preset ("From settings.json defaultTools") does by sending no `toolNames`. An empty array is Chat only, resolved before services are created: no extensions/skills/prompts/themes, and the ordered contents of Pi's discovered context files replace Pi's base prompt. Crossing the Chat-only boundary or clearing a pin rebuilds the wrapper; changing between nonempty presets updates it in place.
 

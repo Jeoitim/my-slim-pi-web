@@ -1,0 +1,304 @@
+diff --git a/agent/customization/checks/tests/auto-reviewer.test.mjs b/agent/customization/checks/tests/auto-reviewer.test.mjs
+index d7788e5..c577798 100644
+--- a/agent/customization/checks/tests/auto-reviewer.test.mjs
++++ b/agent/customization/checks/tests/auto-reviewer.test.mjs
+@@ -134,10 +134,10 @@ test('both execution modes pause uncertain or unavailable deletion reviews witho
+     h.ctx.ui.notify=()=>{notifications++;};
+     assert.equal((await h.call('powershell',{command:'Remove-Item -LiteralPath ./cache -Recurse'})).block,true);
+     assert.equal(dialogs,0,`${mode}: 不得打开阻塞弹窗`);
+-    assert.equal(notifications,1);
++    assert.equal(notifications,0,'关闭人工兜底时不通知、不等待');
+     assert.equal(h.state.approvalHold,true,'风险审批未通过仍暂停后续修改');
+     assert.equal((await h.call('write',{path:'./retry.txt',content:'x'})).block,true);
+-    assert.equal(notifications,1,'暂停后不反复提醒');
++    assert.equal(notifications,0,'拒绝后也不发提醒');
+     assert.equal(await h.call('read',{path:join(h.ctx.cwd,'cleanup.ps1')}),undefined);
+   }
+ });
+diff --git a/agent/customization/checks/tests/notifications-btw.test.mjs b/agent/customization/checks/tests/notifications-btw.test.mjs
+index 968f5e5..c9492f0 100644
+--- a/agent/customization/checks/tests/notifications-btw.test.mjs
++++ b/agent/customization/checks/tests/notifications-btw.test.mjs
+@@ -1,6 +1,6 @@
+ import test from 'node:test';
+ import assert from 'node:assert/strict';
+-import { readFileSync } from 'node:fs';
++import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from 'node:fs';
+ import { homedir } from 'node:os';
+ import { join } from 'node:path';
+ import { pathToFileURL } from 'node:url';
+@@ -101,6 +101,50 @@ test('ASK approval waits for an explicit choice and does not install a timeout',
+   assert.equal(events.includes('timrt:approval-timeout'),false);
+ });
+
++test('human fallback is shared, takes effect without reload and never weakens ASK or the policy seal',async()=>{
++  const {configuredHumanFallback,saveApprovalFallback,confirmApprovalWithAlert,selectApprovalWithAlert}=await jiti.import(join(root,'extensions/timrt-suite/terminal-notifications.ts'));
++  const {createApprovalReviewer}=await jiti.import(join(root,'extensions/timrt-suite/approval-reviewer.ts'));
++  const {default:policy}=await import(pathToFileURL(join(root,'customization/runtime/policy-files.cjs')));
++  const fixture=mkdtempSync(join(root,'approval-setting-test-'));
++  const before=process.env.PI_CODING_AGENT_DIR;
++  try {
++    mkdirSync(join(fixture,'extensions/pi-permission-suite'),{recursive:true});
++    mkdirSync(join(fixture,'extensions/timrt-suite'),{recursive:true});
++    mkdirSync(join(fixture,'customization/runtime'),{recursive:true});
++    mkdirSync(join(fixture,'agents'),{recursive:true});
++    writeFileSync(join(fixture,'agents/approver.md'),'---\nname: approver\n---\nReview.');
++    writeFileSync(join(fixture,'extensions/timrt-suite/index.ts'),'');
++    const file=join(fixture,'extensions/pi-permission-suite/config.json');
++    writeFileSync(file,JSON.stringify({path:{deny:{secret:'protected'}},reviewer:{humanFallback:'ask',other:'keep'}}));
++    writeFileSync(join(fixture,'customization/runtime/policy-seal.json'),JSON.stringify(policy.seal(fixture)));
++    process.env.PI_CODING_AGENT_DIR=fixture;
++    let dialogs=0,alerts=0;
++    const pi={events:{emit(){alerts++;}},appendEntry(){}};
++    const ctx={hasUI:true,cwd:fixture,modelRegistry:{find(){}},ui:{notify(){alerts++;},select:async()=>{dialogs++;return '✅ 批准';},confirm:async()=>{dialogs++;return true;}}};
++    const review=createApprovalReviewer(pi);
++    assert.equal(configuredHumanFallback(),'ask');
++    saveApprovalFallback(false);
++    assert.equal((await review(ctx,'operation:write',{})).source,'paused');
++    assert.equal(await confirmApprovalWithAlert(pi,ctx,'批准操作','fixture'),false);
++    assert.equal(await selectApprovalWithAlert(pi,ctx,'审批操作',['approve','deny']),undefined);
++    assert.equal(dialogs,0);assert.equal(alerts,0,'off emits no prompt or approval notification');
++    assert.equal(policy.verify(fixture).ok,true,'only the interactive field is exempt from the seal');
++    assert.equal(policy.protectedPath(fixture,file),true,'tools still cannot edit the preference');
++    assert.equal(await confirmApprovalWithAlert(pi,ctx,'ASK：批准操作','fixture',{timeout:0}),true);
++    assert.equal(dialogs,1,'ASK still asks even when AUTO/ACT fallback is off');
++    saveApprovalFallback(true);
++    assert.equal((await review(ctx,'operation:write',{})).approved,true,'an existing reviewer reads the current preference');
++    assert.equal(dialogs,2);
++    const config=JSON.parse(readFileSync(file,'utf8'));
++    assert.equal(config.reviewer.other,'keep');
++    config.path.deny={};writeFileSync(file,JSON.stringify(config));
++    assert.equal(policy.verify(fixture).ok,false,'other permission changes remain sealed');
++  }finally{
++    if(before===undefined)delete process.env.PI_CODING_AGENT_DIR;else process.env.PI_CODING_AGENT_DIR=before;
++    rmSync(fixture,{recursive:true,force:true});
++  }
++});
++
+ test('/btw runs independently while the main task is busy, declares no tools and never auto-injects', async () => {
+   const pkg = join(root, 'npm/node_modules/@narumitw/pi-btw');
+   const { default: installBtw } = await jiti.import(join(pkg, 'src/btw.ts'));
+diff --git a/agent/customization/runtime/policy-files.cjs b/agent/customization/runtime/policy-files.cjs
+index c1e7c0a..1352d6b 100644
+--- a/agent/customization/runtime/policy-files.cjs
++++ b/agent/customization/runtime/policy-files.cjs
+@@ -31,6 +31,14 @@ function digest(root, file) {
+     data = Buffer.from(JSON.stringify({extensions:s.extensions,packages:s.packages,defaultTools:s.defaultTools}));
+   }
+   if (file === 'agents/approver.md') data = Buffer.from(data.toString('utf8').replace(/^(---\r?\n)([\s\S]*?)(\r?\n---)/, (_all,a,b,c) => a + b.replace(/^model:.*(?:\r?\n|$)/gm,'') + c));
++  // The human alone may choose whether AUTO/ACT asks or declines. The entire
++  // path stays protected from tools; all other permission rules stay sealed.
++  if (file === 'extensions/pi-permission-suite/config.json') {
++    const config = JSON.parse(data.toString('utf8'));
++    const value = config.reviewer?.humanFallback;
++    if (config.reviewer && (value === undefined || value === 'ask' || value === 'pause')) delete config.reviewer.humanFallback;
++    data = Buffer.from(JSON.stringify(config));
++  }
+   return crypto.createHash('sha256').update(data).digest('hex');
+ }
+ function seal(root) {
+diff --git a/agent/extensions/timrt-suite/approval-reviewer.ts b/agent/extensions/timrt-suite/approval-reviewer.ts
+index 1c78bde..28b4bb3 100644
+--- a/agent/extensions/timrt-suite/approval-reviewer.ts
++++ b/agent/extensions/timrt-suite/approval-reviewer.ts
+@@ -10,7 +10,7 @@ import { join } from "node:path";
+ import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
+ import { configuredBackgroundModel } from "./background-models.ts";
+ import { deletionRisk } from "./guards.ts";
+-import { selectApprovalWithAlert } from "./terminal-notifications.ts";
++import { selectApprovalWithAlert, configuredHumanFallback } from "./terminal-notifications.ts";
+
+ export interface ReviewDecision {
+   approved: boolean;
+@@ -131,34 +131,21 @@ async function askModel(
+   }
+ }
+
+-export function configuredHumanFallback(): "pause" | "ask" {
+-  try {
+-    const config = JSON.parse(readFileSync(join(getAgentDir(),"extensions/pi-permission-suite/config.json"),"utf8"));
+-    return config.reviewer?.humanFallback === "pause" ? "pause" : "ask";
+-  } catch {return "ask";}
+-}
++export { configuredHumanFallback };
+
+ export function createApprovalReviewer(pi: ExtensionAPI, options?: {humanFallback?:"pause"|"ask"}) {
+-  const humanFallback=options?.humanFallback ?? configuredHumanFallback();
++  const humanFallback=()=>options?.humanFallback ?? configuredHumanFallback();
+   const cache = new Map<string, { at: number; decision: ReviewDecision }>();
+   let unavailableUntil = 0;
+   let unavailableKey = "";
+   let rememberedProblem = "";
+   let outageScope = "";
+   let outageChoice: "pause" | "manual" | undefined;
+-  let noticeScope="";
+   const pause = (ctx: ExtensionContext,name:string,input:Record<string,unknown>,reason:string): ReviewDecision => {
+-    const scope=JSON.stringify([ctx.cwd,input.currentUserRequest,ctx.model?.provider,ctx.model?.id]);
+-    if(noticeScope!==scope) {
+-      noticeScope=scope;
+-      ctx.ui.notify(`审批未完成，待审操作已暂停：${reason}`,"warning");
+-      pi.events.emit("timrt:approval-wait",{phase:"start",title:"审批暂停，待处理",hasUI:ctx.hasUI});
+-      pi.events.emit("timrt:approval-wait",{phase:"end"});
+-    }
+     pi.appendEntry("timrt-approval-pause",{tool:name,reason});
+     return {approved:false,source:"paused",reason:`${reason}；当前待审操作未执行。可做允许的只读核对，等待新用户指示或修复后重新评估。`};
+   };
+-  const uncertain = (ctx:ExtensionContext,name:string,input:Record<string,unknown>,reason:string) => humanFallback === "ask"
++  const uncertain = (ctx:ExtensionContext,name:string,input:Record<string,unknown>,reason:string) => humanFallback() === "ask"
+     ? escalate(pi,ctx,name,input,reason) : Promise.resolve(pause(ctx,name,input,reason));
+
+   const review = async function review(
+@@ -217,8 +204,7 @@ export function createApprovalReviewer(pi: ExtensionAPI, options?: {humanFallbac
+     // One outage-policy question per user request and reviewer configuration. Never a write grant.
+     const scope = `${policyKey}\n${String(input.currentUserRequest ?? "")}`;
+     if (outageScope !== scope) { outageScope = scope; outageChoice = undefined; }
+-    if(humanFallback === "pause") {
+-      outageChoice="pause";
++    if(humanFallback() === "pause") {
+       return pause(ctx,name,input,`审批服务未完成评估：${problem}`);
+     }
+     if (!outageChoice) {
+@@ -239,6 +225,6 @@ export function createApprovalReviewer(pi: ExtensionAPI, options?: {humanFallbac
+       const model = reviewerModel(ctx), prompt = approverSystemPrompt();
+       current = !!model && createHash("sha256").update(JSON.stringify([ctx.cwd,model.provider,model.id,prompt])).digest("hex") === unavailableKey;
+     }
+-    return {unavailable:current && Date.now() < unavailableUntil,choice:outageChoice || "none",remainingSeconds:Math.ceil(Math.max(0,unavailableUntil-Date.now())/1000),humanFallback};
++    return {unavailable:current && Date.now() < unavailableUntil,choice:outageChoice || "none",remainingSeconds:Math.ceil(Math.max(0,unavailableUntil-Date.now())/1000),humanFallback:humanFallback()};
+   } });
+ }
+diff --git a/agent/extensions/timrt-suite/permissions.ts b/agent/extensions/timrt-suite/permissions.ts
+index 558cd3b..51ee124 100644
+--- a/agent/extensions/timrt-suite/permissions.ts
++++ b/agent/extensions/timrt-suite/permissions.ts
+@@ -11,7 +11,7 @@ import { maintenanceIntent, isGreeting, PRINCIPAL_SUMMARIES } from "./prompt-pol
+ import { inspectDeletionScripts, powerShellLiteralPaths, explicitDelegation } from "./guards.ts";
+ import { inspectDeletionCall, approveDeletion } from "./deletion-review.ts";
+ import { approvalEvidence, approvalReason, deletionPreparation } from "./approval-evidence.ts";
+-import { confirmApprovalWithAlert, type ApprovalDialogOptions } from "./terminal-notifications.ts";
++import { confirmApprovalWithAlert, configuredHumanFallback, saveApprovalFallback, type ApprovalDialogOptions } from "./terminal-notifications.ts";
+ import { readOnlyCall, protectedMutation, catastrophicCall, policyHealth } from "./call-policy.ts";
+ import { createRuntimeStatus } from "./runtime-status.ts";
+ import { exaReadPolicy } from "./native-exa.ts";
+@@ -105,6 +105,8 @@ export function installPermissions(pi: ExtensionAPI, review = createApprovalRevi
+     const info=runtimeInfo();state.reloadRequired=info.reloadRequired;
+     ctx.ui.setStatus("timrt-runtime",info.reloadRequired ? "⚠ "+info.warning : undefined);
+     ctx.ui.setStatus("pi-permission-suite", health.ok ? permissionBadge(state.mode, ctx.ui.theme.appearance) : "\x1b[31m⚠ 策略变化·只读\x1b[39m");
++    // Read-only projection for clients; commands and session entries remain authoritative.
++    ctx.ui.setStatus("timrt-permission-mode", health.ok ? state.mode : undefined);
+     pi.events.emit("timrt:permissions", { mode: state.mode, taskAgents: state.taskAgents });
+   };
+   const filterTools = () => {
+@@ -159,6 +161,17 @@ export function installPermissions(pi: ExtensionAPI, review = createApprovalRevi
+   };
+   pi.registerCommand("approval-mode", command);
+   pi.registerCommand("permissions", command);
++  pi.registerCommand("approval-fallback", {
++    description: "AUTO/ACT 人工审批等待：on 等待 90 秒；off 直接拒绝。ASK 始终逐次审批。",
++    handler: async (args, ctx) => {
++      const choice = args.trim().toLowerCase();
++      if (choice && choice !== "on" && choice !== "off") { ctx.ui.notify("用法：/approval-fallback on|off", "warning"); return; }
++      if (choice) saveApprovalFallback(choice === "on");
++      ctx.ui.notify(configuredHumanFallback() === "ask"
++        ? "AUTO/ACT：需要人工审批时提醒并等待 90 秒；ASK 仍无限等待。"
++        : "AUTO/ACT：需要人工审批时直接拒绝，不弹窗、不等待；ASK 仍无限等待。", "info");
++    },
++  });
+   pi.registerShortcut("ctrl+q", { description: "切换权限模式", handler: async ctx => {
+     const modes: PermissionMode[] = ["auto", "act", "ask", "plan"];
+     setMode(modes[(modes.indexOf(state.mode) + 1) % modes.length], ctx);
+diff --git a/agent/extensions/timrt-suite/terminal-notifications.ts b/agent/extensions/timrt-suite/terminal-notifications.ts
+index 072de91..6d9a243 100644
+--- a/agent/extensions/timrt-suite/terminal-notifications.ts
++++ b/agent/extensions/timrt-suite/terminal-notifications.ts
+@@ -1,4 +1,33 @@
+-import type { ExtensionAPI, ExtensionContext } from "@earendil-works/pi-coding-agent";
++import { readFileSync, writeFileSync, renameSync, unlinkSync } from "node:fs";
++import { join } from "node:path";
++import { randomUUID } from "node:crypto";
++import { getAgentDir, type ExtensionAPI, type ExtensionContext } from "@earendil-works/pi-coding-agent";
++
++/** Agent-owned interactive preference, shared by the CLI and Web UI. */
++export function configuredHumanFallback(): "pause" | "ask" {
++  try {
++    const config = JSON.parse(readFileSync(join(getAgentDir(), "extensions/pi-permission-suite/config.json"), "utf8"));
++    const value = config.reviewer?.humanFallback;
++    return value === undefined || value === "ask" ? "ask" : "pause";
++  } catch { return "pause"; }
++}
++
++export function saveApprovalFallback(enabled: boolean) {
++  const file = join(getAgentDir(), "extensions/pi-permission-suite/config.json");
++  const config = JSON.parse(readFileSync(file, "utf8"));
++  if (!config || typeof config !== "object" || Array.isArray(config)
++    || (config.reviewer !== undefined && (!config.reviewer || typeof config.reviewer !== "object" || Array.isArray(config.reviewer)))) {
++    throw new Error("Invalid permission configuration; nothing was changed");
++  }
++  config.reviewer = { ...config.reviewer, humanFallback: enabled ? "ask" : "pause" };
++  const temporary = file + "." + randomUUID() + ".tmp";
++  try {
++    writeFileSync(temporary, JSON.stringify(config, null, 2) + "\n", { flag: "wx", mode: 0o600, flush: true });
++    renameSync(temporary, file);
++  } finally {
++    try { unlinkSync(temporary); } catch (error: any) { if (error.code !== "ENOENT") throw error; }
++  }
++}
+
+ export function isApprovalPrompt(title = ""): boolean {
+   if (/权限模式|审批模型|后台模型设置|主题|theme|model|settings|设置/i.test(title)) return false;
+@@ -10,6 +39,9 @@ export type ApprovalDialogOptions = {signal?:AbortSignal;timeout?:number};
+
+ async function approvalDialog<T>(pi:ExtensionAPI,ctx:ExtensionContext,title:string,options:ApprovalDialogOptions|undefined,show:(opts:ApprovalDialogOptions)=>Promise<T>):Promise<T|undefined> {
+   if(!ctx.hasUI || ctx.signal?.aborted || options?.signal?.aborted)return;
++  // ASK's explicit timeout:0 always keeps per-call human approval. AUTO/ACT
++  // may decline human fallback, including delegation and reviewer outages.
++  if(options?.timeout!==0 && configuredHumanFallback()==="pause")return;
+   // timeout:0 is reserved for ASK: deliberate, per-call human approval without expiry.
+   const timeout=options?.timeout===0 ? undefined : options?.timeout && options.timeout>0 ? Math.min(options.timeout,APPROVAL_TIMEOUT_MS) : APPROVAL_TIMEOUT_MS;
+   const controller=new AbortController();let expired=false;
+diff --git a/distribution.json b/distribution.json
+index fcdc919..fb35821 100644
+--- a/distribution.json
++++ b/distribution.json
+@@ -31,10 +31,10 @@
+     "customization/checks/tests/Test-Maintenance.ps1": "390b78b5831747ab85397d857686c6fe16b94fb69ae2a7f3bd79a526e0323ffe",
+     "customization/checks/tests/auto-approval.test.mjs": "8ee99399fa403ac68c2b05b6dbe776285c39e1645c6c0aef08328e5d0a4965f7",
+     "customization/checks/tests/auto-harness.mjs": "42abc060c55fd3ce23cbb5fed12034204459d64d9c2e2671209bcba67c9a6aa0",
+-    "customization/checks/tests/auto-reviewer.test.mjs": "fb010ce8205504f2242bffc42a9b4b5a5ff30dd61976b8342d24bdf46f194412",
++    "customization/checks/tests/auto-reviewer.test.mjs": "aee83fb439ca1ec01eb6924099bb723cfcfe87ffaf2b435a042bee48c92245bf",
+     "customization/checks/tests/deletion-review.test.mjs": "d457f6de2c114de82cac2d1a0bb9b7bae6385221b788a53dd9856964c23cded4",
+     "customization/checks/tests/manual-model.test.mjs": "ae0344297f8ace3a3d8f33e9d6e0ddd69cbc7f4752ed386283343419789b491c",
+-    "customization/checks/tests/notifications-btw.test.mjs": "f0aec1aadcc9f84f0b98832f6f4075191979be08bd22ed8c407da01f8ed5099a",
++    "customization/checks/tests/notifications-btw.test.mjs": "ea645369995c7b6bf455a9a767bffdd381d861e4f812800d6a194ae2feee6af4",
+     "customization/checks/tests/plugins.test.mjs": "8f8727b353ca04fc61f74987ff3217fddf7a0b24d73bd001b98575c1ab8edcb9",
+     "customization/checks/tests/powershell.test.mjs": "70c98b06897ea4907b289308a599175cc7a205b718692a01d546e0faaebe0bc5",
+     "customization/checks/tests/prompt-settings.test.mjs": "49fee4f0b77ce4ff2ff826ac277b08c207f40de93b244f6b31215f99e5b00b66",
+@@ -50,11 +50,11 @@
+     "customization/runtime/config-state.mjs": "b545dbb28282f27e172d1b40a46c015eacc82f393e6c3e6c00f13377dd8f70ce",
+     "customization/runtime/patch-background-models.cjs": "50a2a6248506f610247f57785764e0e5c8bcdb48218b9484b99e0bcc567b06c4",
+     "customization/runtime/patch-interactive-defaults.cjs": "1504111c71f11900d3adb5c8bcd3e965d06a450c521164e4cd2ea991880c1c6a",
+-    "customization/runtime/policy-files.cjs": "a64abe7056a13a70ecd080efc7f7fda59d541042f22eecd9046e801d7348a734",
++    "customization/runtime/policy-files.cjs": "aaf3ed95d6f75a78908b47238cf97e5f90328fc11b982f4736e81018aa5e832a",
+     "extensions/pi-permission-suite/config.json": "3f24295014f0602ef25a8e2dda462f0718e24ea4e7012e2753f492a6353c865d",
+     "extensions/subagent/config.json": "f437a87c13476450c3638941c81002a9fb1648bea569fd4414e81f14777f6621",
+     "extensions/timrt-suite/approval-evidence.ts": "ef6f9d58e6dbfe8667e668cc822906fe1c015019142a798493ebd001bac9e48b",
+-    "extensions/timrt-suite/approval-reviewer.ts": "4a3a703492d228de8a9ca3c29a5ff953362b0854cb331b297515ee429175c7de",
++    "extensions/timrt-suite/approval-reviewer.ts": "28ab268d4a32a5d977b19b490e60c51cdd37e260ce3db2504b35e026e4976890",
+     "extensions/timrt-suite/background-models.ts": "d2c12746e9fdb85525f24427497b98f25180de9ebc9dbd3ccdadd40f35b63e3e",
+     "extensions/timrt-suite/call-policy.ts": "290dde49e787526d33d13517bed3d09219fd9107a2ffe77a7ccc5d7b74ea1018",
+     "extensions/timrt-suite/composer.ts": "4f1a022b5336abd32b62482effc27943084fbdbd3fb575aa188fe5397dc74c5a",
+@@ -63,13 +63,13 @@
+     "extensions/timrt-suite/index.ts": "20ab223e0271d9b589363c567ede7adc93aed8f5c67a96eb2110de5197eedc62",
+     "extensions/timrt-suite/memory-gateway.ts": "06e20539d2942bcbf661d649164b03b7394fbeac1a365359a49bba443a264cad",
+     "extensions/timrt-suite/permission-brief.ts": "266849224d1a997f66ed649201c288ec76787e10e55dbc2ab57ebe0276c41c81",
+-    "extensions/timrt-suite/permissions.ts": "703903587212a8670c8c7cc3290d4c2cd98b4c6bcb3974432e14e527226b1aa7",
++    "extensions/timrt-suite/permissions.ts": "c77152d13c79401b86d2269cac108c19922a66f82209119d6b042ddd3b8ca4d2",
+     "extensions/timrt-suite/prompt-policy.ts": "c7f4684222a70d68be0c5c9d23f6ae4b2d0d5469ea2a97a655b37c29303d7cdb",
+     "extensions/timrt-suite/read-only-parser.ps1": "75c455396d2e00e4cd296126d00b6d103be30592bfce175ec9313966a43663ff",
+     "extensions/timrt-suite/runtime-status.ts": "18dbb7359a8bc6f5fcf268ecdae9de1ff7e96d78536da77aa1ab85f812db40ad",
+     "extensions/timrt-suite/self-maintenance.ts": "eaa723661644b6c306947df799888b63ba5ab0e88db84ac894aebfe1a3d69d63",
+     "extensions/timrt-suite/shell-analysis.ts": "602ccd1195337681ed045dbc9497a33d79b5124aad64c5e7e8a5e8af6cf3c984",
+-    "extensions/timrt-suite/terminal-notifications.ts": "d1099066b6ff530cecf433814516e5fc6fc16230ef65b84fcb6f6793e7b90995",
++    "extensions/timrt-suite/terminal-notifications.ts": "39590402edf6d8e7ee0dad90ce8d9997f345805accd9b7f657f6cfe17f4d252b",
+     "extensions/timrt-suite/theme-picker.ts": "90bcd1d54c02d94b281d69c0b1a40dcf85bd3dbbe762ac36bc369632495a69f0",
+     "extensions/timrt-suite/ui-state.ts": "a80cd468912c7531d6abe748a92e8119ae3bc862ccff74146007944e6ce06439",
+     "extensions/timrt-suite/web-proxy.ts": "91d0ceaad8b0bf891ae1f30e124a6764c52cfe32edce827663b4c9ba60955228",

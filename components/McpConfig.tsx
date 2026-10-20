@@ -766,6 +766,7 @@ export function McpConfig({
 
   return (
     <McpConfigView
+      showCodemode={false}
       cwd={cwd}
       load={load}
       selected={selected}
@@ -830,6 +831,7 @@ export interface McpActionErrorState {
 
 /** The panel for a load in any state, without the fetch; exported for tests. */
 export function McpConfigView({
+  showCodemode = true,
   cwd,
   load,
   selected,
@@ -874,6 +876,7 @@ export function McpConfigView({
   selected: string | null;
   refreshing: boolean;
   embedded: boolean;
+  showCodemode?: boolean;
   codemodeSave?: McpCodemodeSaveState;
   /** The change on its way, if any: `switch:<key>`, `in-project:<key>`, `remove:<key>`, `sign-out:<key>`, `group:<scope>` or `undo`. */
   busy?: string | null;
@@ -1069,14 +1072,14 @@ export function McpConfigView({
             ) : data && context ? (
               <>
                 {/* First, so the 190px phone sidebar always shows it, however many servers follow. */}
-                <div className="config-sidebar-group">
+                {showCodemode && <div className="config-sidebar-group">
                   <McpCodemodeRow
                     codemode={data.codemode}
                     active={!adding && selected === MCP_CODEMODE_SELECTION}
                     rowRef={selectedRowRef}
                     onSelect={onSelect}
                   />
-                </div>
+                </div>}
                 {groups.map((group) => {
                   const block = writeBlock(group.scope);
                   return (
@@ -1120,7 +1123,7 @@ export function McpConfigView({
                 onSubmit={onAddSubmit}
                 onTrustProject={onTrust}
               />
-            ) : selected === MCP_CODEMODE_SELECTION ? (
+            ) : showCodemode && selected === MCP_CODEMODE_SELECTION ? (
               <McpCodemodeDetail
                 codemode={data.codemode}
                 autoEnable={autoEnable}

@@ -1,3 +1,5 @@
+import { isMySlimPiAgent } from "./my-slim-pi";
+import { isPermissionMode, permissionModeFromStatuses } from "./permission-mode";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, Theme, type ModelRuntime } from "@earendil-works/pi-coding-agent";
 import { KeybindingsManager as TuiKeybindingsManager, TUI_KEYBINDINGS } from "@earendil-works/pi-tui";
@@ -127,6 +129,7 @@ type ExtensionCommandContextActionsLike = {
 };
 
 type AgentSessionWrapperOptions = {
+  managedAgent?: boolean;
   exactSystemPrompt?: () => string;
   chatOnly?: boolean;
   onAgentRunComplete?: AgentRunCompleteListener;
@@ -327,6 +330,7 @@ export class AgentSessionWrapper {
   private extensionBindingError: unknown = null;
   private readonly exactSystemPrompt?: () => string;
   private readonly chatOnly: boolean;
+  private readonly managedAgent: boolean;
   private readonly onAgentRunComplete?: AgentRunCompleteListener;
   private readonly suppressCompletionNotifications: boolean;
   private readonly mcpHost?: Pick<McpHost, "prepareForPrompt" | "dispose">;
@@ -355,6 +359,7 @@ export class AgentSessionWrapper {
   ) {
     this.exactSystemPrompt = options.exactSystemPrompt;
     this.chatOnly = options.chatOnly ?? false;
+    this.managedAgent = options.managedAgent ?? false;
     this.onAgentRunComplete = options.onAgentRunComplete;
     this.suppressCompletionNotifications = options.suppressCompletionNotifications ?? false;
     this.mcpHost = options.mcpHost;
@@ -597,6 +602,9 @@ export class AgentSessionWrapper {
       } else {
         this.inner.extensionRunner.setUIContext?.(uiContext, "rpc");
       }
+      // pi-cc registers its write renderer on a zero-delay startup callback.
+      // Complete that startup turn before exposing or disposing the managed session.
+      if (this.managedAgent) await new Promise<void>(resolve => setTimeout(resolve, 0));
       this.extensionsBound = true;
       console.log(`[pi-web] session_start dispatched to extensions for session ${this.inner.sessionId}`);
     })().catch((err) => {
@@ -634,7 +642,9 @@ export class AgentSessionWrapper {
   }
 
   private shouldWaitForExtensions(type: string): boolean {
-    return type === "prompt"
+    return type === "open_my_slim_pi_settings"
+      || type === "set_permission_mode"
+      || type === "prompt"
       || type === "steer"
       || type === "follow_up"
       || type === "get_commands"
@@ -1283,7 +1293,42 @@ export class AgentSessionWrapper {
         return { commands };
       }
 
+      case "open_my_slim_pi_settings": {
+        if (!this.managedAgent || !this.extensionCommandCandidates().some(item => item.name === "subagents")) {
+          throw new Error("My Slim Pi background-model settings are unavailable");
+        }
+        if (this.isRunning()) throw new Error("Cannot open settings while the session is busy");
+        // Keep admission until the last Agent dialog closes. Dispatch returns so
+        // the settings panel can close and reveal the ordinary Extension UI.
+        const release = await this.acquirePromptAdmission();
+        if (this.isRunning()) { release(); throw new Error("Cannot open settings while the session is busy"); }
+        void this.inner.prompt("/subagents", {source:"rpc"}).catch(error => {
+          this.emit({type:"extension_ui_request", method:"notify", message:String(error), notifyType:"error"});
+        }).finally(release);
+        return null;
+      }
+
+      case "set_permission_mode": {
+        if (!isPermissionMode(command.mode)) throw new Error("Invalid permission mode");
+        if (this.isRunning()) throw new Error("Cannot change permission mode while the session is busy");
+        if (!this.extensionCommandCandidates().some(item => item.name === "approval-mode")) {
+          throw new Error("My Slim Pi /approval-mode is unavailable; check the Agent directory and extensions");
+        }
+        if (permissionModeFromStatuses(this.getExtensionStatuses()) === null) {
+          throw new Error("Stable My Slim Pi permission status unavailable; update and rebuild timrt-suite");
+        }
+        const release = await this.acquirePromptAdmission();
+        try {
+          if (this.isRunning()) throw new Error("Cannot change permission mode while the session is busy");
+          await this.inner.prompt("/approval-mode " + command.mode, { source: "rpc" });
+          const mode = permissionModeFromStatuses(this.getExtensionStatuses());
+          if (mode !== command.mode) throw new Error("My Slim Pi did not confirm the requested permission mode");
+          return { mode, extensionStatuses: this.getExtensionStatuses() };
+        } finally { release(); }
+      }
+
       case "set_tools": {
+        if (this.managedAgent) throw new Error("My Slim Pi owns tool selection; use /approval-mode");
         const toolNames = command.toolNames as string[];
         this.setActiveToolSelection(toolNames);
         return null;
@@ -1911,14 +1956,14 @@ export class AgentSessionWrapper {
       select: (title, options, opts) => this.requestExtensionUi(
         { method: "select", title, options, ...(opts?.timeout ? { timeout: opts.timeout } : {}) },
         undefined,
-        (response) => "value" in response ? response.value : undefined,
+        (response) => !("cancelled" in response) && "value" in response && options.includes(response.value) ? response.value : undefined,
         opts?.timeout,
         opts?.signal,
       ),
       confirm: (title, message, opts) => this.requestExtensionUi(
         { method: "confirm", title, message, ...(opts?.timeout ? { timeout: opts.timeout } : {}) },
         false,
-        (response) => "confirmed" in response ? response.confirmed : false,
+        (response) => !("cancelled" in response) && "confirmed" in response && response.confirmed === true,
         opts?.timeout,
         opts?.signal,
       ),
@@ -2245,6 +2290,7 @@ export async function setRpcSessionTools(
   sessionFile: string | undefined,
   requestedToolNames: unknown,
 ): Promise<SetRpcSessionToolsResult> {
+  if (isMySlimPiAgent(getAgentDir())) throw new Error("My Slim Pi owns tool selection; use /approval-mode");
   const toolNames = requestedToolNames === undefined
     ? undefined
     : validateSessionToolSelection(requestedToolNames);
@@ -2454,7 +2500,8 @@ export async function startRpcSession(
   options: RpcSessionStartOptions = {},
 ): Promise<{ session: AgentSessionWrapper; realSessionId: string }> {
   const { initialModel, allowInitialModelFallback, thinkingLevel } = options;
-  const requestedToolNames = options.toolNames === undefined
+  const managedAgent = isMySlimPiAgent(getAgentDir());
+  const requestedToolNames = managedAgent || options.toolNames === undefined
     ? undefined
     : validateSessionToolSelection(options.toolNames);
   const registry = getRegistry();
@@ -2496,8 +2543,8 @@ export async function startRpcSession(
   const persistedToolNames = subagentResources
     ? undefined
     : readSessionToolSelection(sessionEntries);
-  const selectedToolNames = subagentResources?.tools ?? persistedToolNames ?? requestedToolNames;
-  if (!subagentResources && persistedToolNames === undefined && requestedToolNames !== undefined) {
+  const selectedToolNames = managedAgent ? undefined : subagentResources?.tools ?? persistedToolNames ?? requestedToolNames;
+  if (!managedAgent && !subagentResources && persistedToolNames === undefined && requestedToolNames !== undefined) {
     appendSessionToolSelection(sessionManager, requestedToolNames);
   }
   const subagentLoadsResources = Boolean(
@@ -2601,16 +2648,16 @@ export async function startRpcSession(
         : {
             extensionFactories: [
               ...(builtins?.extensions ?? []),
-              createReadOnlyMcpPolicyExtension(),
+              ...(!managedAgent ? [createReadOnlyMcpPolicyExtension()] : []),
               createProjectCommandBashExtension({
                 cwd: sessionCwd,
                 settings: settingsManager,
               }),
-              createSubagentExtension(
+              ...(!managedAgent ? [createSubagentExtension(
                 SUBAGENT_CONTROLLER.extensionRuntime,
                 () => listSubagentProfiles(sessionCwd),
                 isBuiltInSubagentsEnabled,
-              ),
+              )] : []),
             ],
             extensionsOverride: (base) => preferUserBashExtension(preferPiWebSubagentExtension(base)),
           },
@@ -2731,6 +2778,7 @@ export async function startRpcSession(
     exactSystemPromptRef.current = exactSystemPrompt;
     const mcpHost = builtins?.mcpHost ?? subagentMcp?.mcpHost;
     const wrapper = new AgentSessionWrapper(inner, {
+      managedAgent,
       exactSystemPrompt,
       chatOnly,
       onAgentRunComplete: (completedSessionId, sessionName) => {

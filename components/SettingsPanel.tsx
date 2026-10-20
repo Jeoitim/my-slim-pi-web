@@ -15,8 +15,7 @@ import {
 } from "@/hooks/useChatAppearance";
 import { useEnterSendMode, setEnterSendMode } from "@/hooks/useEnterSendMode";
 import { useFilesPlacement, setFilesPlacement } from "@/hooks/useFilesPlacement";
-import { sendAgentCommand } from "@/lib/agent-client";
-import type { ProjectTrustStatus, ToolSettingsResponse } from "@/lib/api-types";
+import type { ProjectTrustStatus } from "@/lib/api-types";
 import {
   setLastSettingsSection,
   settingsSectionRequiresProject,
@@ -30,8 +29,7 @@ import {
 import { ModelsConfig } from "./ModelsConfig";
 import { setupPushSubscription } from "@/lib/push-client";
 import { SkillsConfig } from "./SkillsConfig";
-import { AgentsConfig } from "./AgentsConfig";
-import { PluginsConfig } from "./PluginsConfig";
+import { MySlimPiSettings } from "./MySlimPiSettings";
 import { McpConfig } from "./McpConfig";
 import { ConfigButton, ConfigSwitch } from "./SettingsUi";
 import { FontSettings } from "./FontSettings";
@@ -80,9 +78,6 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
   const { width: chatContentWidth, setWidth: setChatContentWidth, fontSize, setFontSize } = useChatAppearance();
   const enterSendMode = useEnterSendMode();
   const filesPlacement = useFilesPlacement();
-  const [shellSettings, setShellSettings] = useState<ToolSettingsResponse | null>(null);
-  const [shellSaving, setShellSaving] = useState(false);
-  const [shellError, setShellError] = useState<string | null>(null);
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
   const [cacheMissNotices, setCacheMissNotices] = useState<boolean | null>(null);
   const [cacheMissNoticesSaving, setCacheMissNoticesSaving] = useState(false);
@@ -117,20 +112,6 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
 
   useEffect(() => {
     let cancelled = false;
-    void fetch("/api/tools/settings")
-      .then(async (response) => {
-        const data = await response.json() as ToolSettingsResponse & { error?: string };
-        if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
-        if (!cancelled) setShellSettings(data);
-      })
-      .catch((cause) => {
-        if (!cancelled) setShellError(cause instanceof Error ? cause.message : String(cause));
-      });
-    return () => { cancelled = true; };
-  }, []);
-
-  useEffect(() => {
-    let cancelled = false;
     void fetch("/api/cache-miss-notices")
       .then(async (response) => {
         const data = await response.json() as { enabled?: boolean; error?: string };
@@ -161,29 +142,6 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
       setCacheMissNoticesError(cause instanceof Error ? cause.message : String(cause));
     } finally {
       setCacheMissNoticesSaving(false);
-    }
-  };
-
-  const togglePowerShell = async (enabled: boolean) => {
-    setShellSaving(true);
-    setShellError(null);
-    try {
-      const response = await fetch("/api/tools/settings", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled }),
-      });
-      const data = await response.json() as ToolSettingsResponse & { error?: string };
-      if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
-      setShellSettings(data);
-      if (sessionId) {
-        await sendAgentCommand(sessionId, { type: "reload" });
-        onSessionReloaded();
-      }
-    } catch (cause) {
-      setShellError(cause instanceof Error ? cause.message : String(cause));
-    } finally {
-      setShellSaving(false);
     }
   };
 
@@ -420,23 +378,6 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
         <p id="settings-files-placement-description" className="settings-general-description">{t("settings.filesPlacementDescription")}</p>
       </section>
 
-      {shellSettings?.isWindows && (
-        <section className="settings-general-section">
-          <h3 className="settings-general-heading">{t("settings.shellTool")}</h3>
-          <p className="settings-general-description">{t("settings.shellToolDescription")}</p>
-          <div className="settings-shell-option">
-            <span>{t("settings.usePowerShell")}</span>
-            <ConfigSwitch
-              checked={shellSettings.powerShellEnabled}
-              loading={shellSaving}
-              label={t("settings.usePowerShell")}
-              onChange={(enabled) => void togglePowerShell(enabled)}
-            />
-          </div>
-          {shellError && <p role="alert" className="settings-general-error">{shellError}</p>}
-        </section>
-      )}
-
       <section className="settings-general-section">
         <h3 className="settings-general-heading">{t("settings.pushPermission")}</h3>
         <p className="settings-general-description">{t("settings.pushPermissionDescription")}</p>
@@ -515,7 +456,7 @@ export function SettingsPanel({
   onProjectTrustChanged,
 }: Props) {
   const { t } = useI18n();
-  const [section, setSection] = useState<SettingsSection>(initialSection);
+  const [section, setSection] = useState<SettingsSection>(initialSection === "plugins" ? "agents" : initialSection);
   const [mountedSections, setMountedSections] = useState<ReadonlySet<SettingsSection>>(
     () => new Set([section]),
   );
@@ -524,8 +465,7 @@ export function SettingsPanel({
     { id: "general", label: t("settings.general") },
     { id: "models", label: t("common.models") },
     { id: "skills", label: t("common.skills") },
-    { id: "agents", label: t("common.agents") },
-    { id: "plugins", label: t("common.plugins") },
+    { id: "agents", label: "My Slim Pi" },
     { id: "mcp", label: t("settings.mcp") },
   ] as const).map((item) => ({ ...item, requiresProject: settingsSectionRequiresProject(item.id) }));
   const sectionRequiresProject = settingsSectionRequiresProject(section);
@@ -623,8 +563,7 @@ export function SettingsPanel({
           {/* Visited sections stay mounted, so the ones whose answer depends on trust take the page's
               status and load again in place when trusting from Settings › MCP changes it. */}
           {cwd && sectionHost("skills", <SkillsConfig embedded key={cwd} cwd={cwd} trust={projectTrust} onClose={onClose} />)}
-          {cwd && sectionHost("agents", <AgentsConfig embedded key={cwd} cwd={cwd} sessionId={sessionId} trust={projectTrust} onClose={onClose} onReloaded={onSessionReloaded} />)}
-          {cwd && sectionHost("plugins", <PluginsConfig embedded key={cwd} cwd={cwd} sessionId={sessionId} trust={projectTrust} onClose={onClose} onReloaded={onSessionReloaded} />)}
+          {sectionHost("agents", <MySlimPiSettings sessionId={sessionId} onClose={onClose} />)}
           {/* No project needed: the global mcp.json is listed alone, and a project adds its group. */}
           {sectionHost("mcp", <McpConfig embedded key={cwd ?? ""} cwd={cwd} trust={projectTrust} onTrustProject={onOpenTrustDialog} onProjectTrustChanged={onProjectTrustChanged} onClose={onClose} />)}
         </main>

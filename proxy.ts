@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { isRemoteRequest, isRemoteApiAllowed, isRemoteHostConfigured } from "@/lib/remote-access";
 import {
   getAuthRetryAfterMs,
   recordAuthFailure,
@@ -39,6 +40,13 @@ export function proxy(request: NextRequest) {
     return NextResponse.json({ error: "Untrusted API request" }, { status: 403 });
   }
 
+  const remote = isRemoteRequest(request);
+  if (remote && (!process.env.PI_WEB_PASSWORD || !isRemoteHostConfigured(request))) {
+    return NextResponse.json({ error: "Remote access requires PI_WEB_PASSWORD and an explicit PI_WEB_ALLOWED_HOSTS entry" }, { status: 403 });
+  }
+  if (remote && isApiRequest && !isRemoteApiAllowed(request.nextUrl.pathname, request.method)) {
+    return NextResponse.json({ error: "This API is disabled for remote access; use the local maintenance interface" }, { status: 403 });
+  }
   const password = process.env.PI_WEB_PASSWORD;
   if (!isWebPasswordEnabled(password)) {
     if (request.nextUrl.pathname === "/login") {

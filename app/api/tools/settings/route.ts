@@ -1,3 +1,5 @@
+import { isMySlimPiAgent } from "@/lib/my-slim-pi";
+import { getAgentDir as slimAgentDir } from "@earendil-works/pi-coding-agent";
 import { NextResponse } from "next/server";
 import type { McpErrorResponse, McpRefusalReason, ToolSettingsResponse } from "@/lib/api-types";
 import {
@@ -55,6 +57,7 @@ export async function GET() {
 }
 
 export async function PUT(req: Request) {
+  if (isMySlimPiAgent(slimAgentDir())) return NextResponse.json({error:"My Slim Pi owns this configuration; use Settings › My Slim Pi"}, {status:403});
   if (!isApiRequestAllowed(req)) {
     return refusal(403, "request-denied", "Untrusted API request");
   }

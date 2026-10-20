@@ -1,3 +1,5 @@
+import { isMySlimPiAgent } from "@/lib/my-slim-pi";
+import { getAgentDir as slimAgentDir } from "@earendil-works/pi-coding-agent";
 import { NextResponse } from "next/server";
 import { existsSync } from "fs";
 import { getAllowedFileRoots, isExistingFilePathAllowed } from "@/lib/file-access";
@@ -41,6 +43,7 @@ export async function GET(req: Request) {
 }
 
 export async function PUT(req: Request) {
+  if (isMySlimPiAgent(slimAgentDir())) return NextResponse.json({error:"My Slim Pi owns this configuration; use Settings › My Slim Pi"}, {status:403});
   try {
     const body = await req.json() as {
       cwd?: unknown;
@@ -60,6 +63,7 @@ export async function PUT(req: Request) {
 }
 
 export async function PATCH(req: Request) {
+  if (isMySlimPiAgent(slimAgentDir())) return NextResponse.json({error:"My Slim Pi owns this configuration; use Settings › My Slim Pi"}, {status:403});
   try {
     const body = await req.json() as { cwd?: unknown; scope?: unknown; name?: unknown; enabled?: unknown };
     const cwd = await validateCwd(body.cwd);
@@ -108,6 +112,7 @@ export async function PATCH(req: Request) {
 }
 
 export async function DELETE(req: Request) {
+  if (isMySlimPiAgent(slimAgentDir())) return NextResponse.json({error:"My Slim Pi owns this configuration; use Settings › My Slim Pi"}, {status:403});
   try {
     const body = await req.json() as { cwd?: unknown; scope?: unknown; name?: unknown };
     const cwd = await validateCwd(body.cwd);

@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import { isRemoteRequest, remoteAgentCommandError } from "@/lib/remote-access";
 import { resolveSessionPath } from "@/lib/session-reader";
 import { startRpcSession, getRpcSession, setRpcSessionTools } from "@/lib/rpc-manager";
 
@@ -13,6 +14,10 @@ export async function POST(
 
   try {
     const body = await req.json() as { type: string; [key: string]: unknown };
+    if (isRemoteRequest(req)) {
+      const error = remoteAgentCommandError(body);
+      if (error) return NextResponse.json({ error }, { status: 403 });
+    }
     commandType = typeof body.type === "string" ? body.type : undefined;
     const requestedToolNames = body.toolNames;
     if (
