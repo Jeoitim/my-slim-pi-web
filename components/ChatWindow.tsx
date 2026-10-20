@@ -1,6 +1,6 @@
 "use client";
 import { registerAbortHandler } from "@/hooks/useKeyboardShortcuts";
-import Image from "next/image";
+import { PiLogo } from "./PiLogo";
 import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { AgentMessage, AssistantContentBlock, AssistantMessage, BashExecutionMessage, BlockingExtensionUiRequest, ExtensionUiRequest, SessionInfo, SessionTreeNode, ToolResultMessage } from "@/lib/types";
@@ -1494,7 +1494,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
           <div className="new-session-hero" style={{ paddingLeft: 16, paddingRight: isMobile ? 16 : 52 }}>
             <div className="new-session-hero-inner" style={{ maxWidth: "var(--chat-content-max-width, 820px)" }}>
               <div className="new-session-brand">
-                <Image src="/icons/apple-touch-icon.png" width={40} height={40} alt="" priority className="new-session-logo" />
+                <PiLogo className="new-session-logo" />
                 <div className="new-session-brand-text">
                   <span className="new-session-brand-name">My Slim Pi Web</span>
                   <span className="new-session-meta">

@@ -1010,24 +1010,28 @@ a.session-tree-main {
 }
 
 /* With the files below the sessions there is no tab to choose: the brand
-   stands where the tabs were (PiWebTitle), the panel's typographic anchor,
-   as on the old sidebar. Not a cell: no box, no line on its right; its text
+   stands where the tabs were (PiWebTitle), with the Pi block mark. No line
+   on its right; its content sits
    in the chevron column (6px in plus a header toggle's 5px). A click shows
    the versions in the accent for a few seconds. Never cut: New's label
    gives way first, and on a row too narrow for the versions they take the
-   sidebar's meta size (data-fit 2, which only they reach: "Pi Web" fits
+   sidebar's meta size (data-fit 2): the icon fits
    beside the two cells at the sidebar's 180px minimum, and at 11px so do
-   the versions with a digit to spare). */
+   the versions with a digit to spare. */
 .sidebar-brand {
+  display: inline-flex;
   flex: none;
+  align-items: center;
+  justify-content: center;
   align-self: center;
-  min-width: 6ch;
+  width: 30px;
+  height: 30px;
   margin: 0 0 0 8px;
   padding: 2px 3px;
   border: 0;
   border-radius: 6px;
   background: transparent;
-  color: var(--text);
+  color: var(--accent);
   font-family: var(--font-mono);
   font-size: 15px;
   font-weight: 700;
@@ -1035,11 +1039,23 @@ a.session-tree-main {
   line-height: normal;
   text-align: left;
   white-space: nowrap;
-  cursor: default;
+  cursor: pointer;
+}
+
+.sidebar-brand-logo {
+  display: block;
+  flex: none;
+  width: 24px;
+  height: 24px;
+}
+
+.sidebar-brand:hover {
+  background: var(--bg-hover);
 }
 
 .sidebar-brand.is-version {
-  color: var(--accent);
+  width: auto;
+  min-width: 6ch;
 }
 
 .sidebar-brand:focus {

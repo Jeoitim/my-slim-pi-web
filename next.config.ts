@@ -18,6 +18,7 @@ const gfmAutolinkEmailLoader = join(configDir, "lib/gfm-autolink-email-loader.cj
 
 const nextConfig: NextConfig = {
   agentRules: false,
+  devIndicators: false,
   outputFileTracingRoot: configDir,
   experimental: {
     // proxy.ts matches /api/:path*, and Next buffers the request body whenever

@@ -1,6 +1,6 @@
 # 上游同步与回退
 
-基底为 `https://github.com/agegr/pi-web.git` 默认分支 main，基准提交 `7c0778a`，上游版本 0.12.2。保留完整 Git 历史、MIT LICENSE及原 CONTRIBUTING / AGENTS；通用介绍直接链接上游 README。本仓库只有 `upstream` remote，没有自动配置发布目的地。
+基底为 `https://github.com/agegr/pi-web.git` 默认分支 main，基准提交 `7c0778a`，上游版本 0.12.2。保留完整 Git 历史、MIT LICENSE及原 CONTRIBUTING / AGENTS；通用介绍直接链接上游 README。`origin` 指向本项目公开仓库 [Jeoitim/my-slim-pi-web](https://github.com/Jeoitim/my-slim-pi-web)，`upstream` 保留原上游地址。
 
 ## 同步
 

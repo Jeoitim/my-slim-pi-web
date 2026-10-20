@@ -1,5 +1,8 @@
 # Sessions, branching and live events
 
+## My Slim Pi branding
+The sidebar brand and new-session hero use `PiLogo`, with the exact startup block geometry from My Slim Pi's `assets/pi-warm.svg`. Inline SVG uses `currentColor` and the app's `--accent`, so every saved palette and system theme updates it without image swaps. The sidebar retains its accessible name and click-to-show versions; its fit callback also follows icon/version changes. The upstream text-brand description below is historical for this fork. Next's development indicator is disabled with `devIndicators: false`; error reporting remains available.
+
 ## AgentSession lifecycle (`lib/rpc-manager.ts`)
 - One `AgentSessionWrapper` per session id in `globalThis.__piSessions` (`globalThis` survives Next.js hot reload; a module-level Map does not). Concurrent `startRpcSession()` calls share one start Promise (`globalThis.__piStartLocks`). Idle timeout: 10 minutes (`PI_WEB_IDLE_TIMEOUT_MS`, `0` disables).
 - Stop cannot cancel a run awaiting a promise that ignores the abort signal (a third-party extension handler or tool): `inner.abort()` never returns. So Stop (`abort`, `abort_bash`) sets `forceShutdownOnIdle` and arms the idle timer, shutting the wrapper down one idle timeout after the first Stop even while it runs. Later commands (a reload's `get_tools`, Stop again) must not push that deadline back; with `PI_WEB_IDLE_TIMEOUT_MS=0` it still arms, at 10 minutes.

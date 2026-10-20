@@ -2,13 +2,13 @@
 
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
 import { useI18n } from "@/hooks/useI18n";
+import { PiLogo } from "./PiLogo";
 
 /**
  * The sidebar's brand with the files below the sessions (its toolbar row,
  * components/SessionSidebar.tsx; the tabs layout has its tabs there), with
- * the old sidebar's easter egg: a click scrambles "My Slim Pi Web" into the versions
- * (pi-web's, a "p", pi's) in the accent; they scramble back after
- * VERSION_SHOWN_MS, or at once on a second click.
+ * Pi block mark follows the theme's accent. Its existing version easter egg
+ * remains: a click shows the versions for VERSION_SHOWN_MS, or until a second click.
  */
 
 export const BRAND_TEXT = "My Slim Pi Web";
@@ -93,7 +93,7 @@ export function PiWebTitle({ onWidthChange }: {
 
   useLayoutEffect(() => {
     onWidthChange?.();
-  }, [text.length, onWidthChange]);
+  }, [versionShown, text.length, onWidthChange]);
 
   useEffect(() => () => {
     if (revertTimerRef.current) clearTimeout(revertTimerRef.current);
@@ -122,7 +122,7 @@ export function PiWebTitle({ onWidthChange }: {
       aria-label={t("sidebar.brandLabel", { app: appVersion ?? "0.0.0", pi: piVersion ?? "0.0.0" })}
       onClick={handleClick}
     >
-      {text}
+      {versionShown ? text : <PiLogo className="sidebar-brand-logo" />}
     </button>
   );
 }
