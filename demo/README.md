@@ -1,6 +1,6 @@
 # Pi Web demo
 
-A static, backend-free copy of the Pi Web UI for GitHub Pages. It uses the
+A static, backend-free copy of the Pi Web UI for static hosting. It uses the
 real Pi Web components, and an in-browser mock answers every `/api/*` request
 the UI makes, so visitors can click through sessions, files, models and
 settings without installing anything.
@@ -61,8 +61,8 @@ The demo never ends up in the app or its npm package:
 - **Kept out of the app's CSS.** Tailwind scans every file that isn't
   gitignored, so `app/globals.css` has `@source not "../demo";`. The demo's copy
   of `globals.css` keeps the same line, where it points at nothing.
-- **Its own CI.** Only `.github/workflows/demo-pages.yml` installs and builds
-  `demo/`.
+- **Its own CI.** `.github/workflows/demo-pages.yml` checks pull requests that
+  change `demo/`.
 
 ## Commands
 
@@ -80,7 +80,7 @@ To preview the build under a sub-path the way GitHub Pages serves it, set
 
 ## Deployment
 
-`.github/workflows/demo-pages.yml` builds the demo on every push to `main` and
-deploys `out/` to GitHub Pages. Enable Pages once under **Settings → Pages →
-Source: GitHub Actions**; the site is then served at
-`https://<owner>.github.io/<repo>/`.
+This fork does not deploy the demo. Its workflow checks lint and the static
+build only on pull requests that change the demo. To host it yourself, build
+`demo/out/` and publish that directory to a static host; set
+`PAGES_BASE_PATH` if the site is served under a sub-path.

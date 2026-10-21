@@ -144,7 +144,7 @@ lib/             会话、智能体、模型、文件、Git 和安全逻辑
 public/          静态资源和 PWA 文件
 bin/             npm CLI 入口及启动参数解析
 docs/            面向用户和贡献者的专题文档
-demo/            发布到 GitHub Pages 的静态演示站（见 demo/README.md）
+demo/            可自行部署的静态演示（此 fork 不自动发布，见 demo/README.md）
 ```
 
 架构说明和详细文件地图见 [AGENTS.md](../AGENTS.md)。
