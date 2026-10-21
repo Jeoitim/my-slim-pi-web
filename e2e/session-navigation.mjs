@@ -58,6 +58,9 @@ export async function checkSessionNavigation({ browser, base, artifacts, a, b, a
     await content[id](target).waitFor({ state: "visible" });
   };
   const newTab = async (open) => {
+    // Closing the previous tab can leave Chromium's focus on a different page.
+    // A modified click only opens a new tab when its source is foreground.
+    await page.bringToFront();
     const opened = context.waitForEvent("page");
     await open();
     const tab = await opened;

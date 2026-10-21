@@ -8,6 +8,7 @@
 ## My Slim Pi branding
 The sidebar brand and new-session hero use `PiLogo`, with the exact startup block geometry from My Slim Pi's `assets/pi-warm.svg`. Inline SVG uses `currentColor` and the app's `--accent`, so every saved palette and system theme updates it without image swaps. The sidebar retains its accessible name and click-to-show versions; its fit callback also follows icon/version changes. The upstream text-brand description below is historical for this fork. Next's development indicator is disabled with `devIndicators: false`; error reporting remains available.
 At the sidebar's 180px minimum, a fork version like `0.12.2-jeoitim.3` plus Pi's version is too long for a single line beside New and Search. The level-2 fit wraps the visible version into two lines inside a 100px cap, retaining every character.
+The session-navigation E2E brings its source tab to the foreground before each browser-native modified click, including after it closes another tab; background-page clicks do not reliably create a tab in headless Chromium.
 
 ## AgentSession lifecycle (`lib/rpc-manager.ts`)
 - One `AgentSessionWrapper` per session id in `globalThis.__piSessions` (`globalThis` survives Next.js hot reload; a module-level Map does not). Concurrent `startRpcSession()` calls share one start Promise (`globalThis.__piStartLocks`). Idle timeout: 10 minutes (`PI_WEB_IDLE_TIMEOUT_MS`, `0` disables).
