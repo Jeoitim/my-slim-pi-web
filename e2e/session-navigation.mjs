@@ -154,7 +154,9 @@ export async function checkSessionNavigation({ browser, base, artifacts, a, b, a
     await link(page, b.id, "pinned").waitFor();
     assert.equal(await link(page, b.id, "pinned").getAttribute("href"), `?session=${b.id}`);
     await expectShows(page, a.id);
-    tab = await newTab(() => link(page, b.id, "pinned").click({ modifiers: ["ControlOrMeta"] }));
+    // Ctrl/Cmd-click was checked above; middle-click exercises the same
+    // browser-owned link behavior here without a held modifier after tab churn.
+    tab = await newTab(() => link(page, b.id, "pinned").click({ button: "middle" }));
     await expectShows(tab, b.id);
     await tab.close();
     await row(page, b.id, "pinned").click({ button: "right" });
@@ -168,7 +170,7 @@ export async function checkSessionNavigation({ browser, base, artifacts, a, b, a
     await panel(page).locator('[data-row-key="footer-archived"] button').click();
     await link(page, b.id, "archive").waitFor();
     assert.equal(await link(page, b.id, "archive").getAttribute("href"), `?session=${b.id}`);
-    tab = await newTab(() => link(page, b.id, "archive").click({ modifiers: ["ControlOrMeta"] }));
+    tab = await newTab(() => link(page, b.id, "archive").click({ button: "middle" }));
     await expectShows(tab, b.id, { archived: true });
     await tab.close();
     await row(page, b.id, "archive").hover();
