@@ -14,9 +14,9 @@ module.exports = {
   ],
   // Backend native modules run in the independent Node runtime, outside ASAR.
   asar: true, npmRebuild: false, nodeGypRebuild: false,
-  win: { target: [{ target: "nsis", arch: ["x64"] }], executableName: "MySlimPiWeb", icon: ".desktop/icons/icon.ico" },
+  win: { target: [{ target: "nsis", arch: ["x64"] }], artifactName: "My.Slim.Pi.Web.Setup.${version}.${ext}", executableName: "MySlimPiWeb", icon: ".desktop/icons/icon.ico" },
   nsis: { oneClick: false, perMachine: false, allowToChangeInstallationDirectory: true, deleteAppDataOnUninstall: false,
     createDesktopShortcut: true, createStartMenuShortcut: true, runAfterFinish: false },
-  linux: { target: [{ target: "AppImage", arch: ["x64"] }], category: "Development", icon: ".desktop/icons/icon.png" },
+  linux: { target: [{ target: "AppImage", arch: ["x64"] }], artifactName: "My.Slim.Pi.Web-${version}.${ext}", category: "Development", icon: ".desktop/icons/icon.png" },
   mac: { target: ["dmg"], category: "public.app-category.developer-tools" },
 };

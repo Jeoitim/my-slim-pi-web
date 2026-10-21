@@ -36,6 +36,6 @@ git push origin v<版本>
 
 不要使用 `git push --tags`。`.github/workflows/desktop-release.yml` 只响应 `v*-jeoitim.*` tag，并在构建前核对 tag 与两个包清单版本、发布说明。校验通过后，Windows 和 Linux runner 分别执行 `npm ci`、隔离桌面构建及打包。Windows 包必须成功且下载后的 SHA256 再次匹配，才会创建 GitHub Release；Linux 打包成功时也校验并附上 AppImage。桌面打包器不自行发布，只有工作流最后一步上传 Release 附件。可用 CI 的手动桌面打包检查先验证 GitHub runner，不会发布产物。
 
-发布结束后查看 Actions 与 Release 页面，下载 Windows `.exe` 和相邻的 `.sha256` 验证文件名、大小与校验和。如有 Linux `.AppImage`，也验证其校验文件。Windows 用户运行安装包；Linux 用户先给 AppImage 执行权限再运行。AppImage 的实际运行仍需在目标 Linux 桌面环境验证。当前没有代码签名，Windows 可能显示 SmartScreen 提示。
+发布结束后查看 Actions 与 Release 页面，下载 Windows `.exe` 和相邻的 `.sha256` 验证文件名、大小与校验和。如有 Linux `.AppImage`，也验证其校验文件。发布附件使用不含空格的文件名，确保下载后可直接按 `.sha256` 文件核对。Windows 用户运行安装包；Linux 用户先给 AppImage 执行权限再运行。AppImage 的实际运行仍需在目标 Linux 桌面环境验证。当前没有代码签名，Windows 可能显示 SmartScreen 提示。
 
 若构建失败且尚未创建 Release，可先撤回失败的 tag，修复并经 GitHub 构建验证后重新推送同名 tag。已经发布的 tag 不应移动；发布后的代码回退使用新修订号，保持安装包与来源提交可追溯。
