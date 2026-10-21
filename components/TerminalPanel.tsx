@@ -21,6 +21,7 @@ import type { TerminalEvent } from "@/lib/terminal-manager";
 import { TERMINAL_XTERM_THEMES } from "@/lib/terminal-theme";
 import { TerminalExtraKeys, useTerminalExtraKeysVisible } from "./TerminalExtraKeys";
 import type { TerminalTab } from "./terminal-tab-state";
+import { registerDesktopTerminal } from "@/lib/desktop-context-target";
 
 interface Props {
   tab: TerminalTab;
@@ -109,6 +110,16 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
     const fit = new FitAddon();
     terminal.loadAddon(fit);
     terminal.open(container);
+    // Include the terminal's padded display area, especially at viewport edges.
+    const contextScope = container.closest<HTMLElement>(".terminal-xterm") ?? container;
+    const unregisterContextMenu = registerDesktopTerminal(contextScope, () => ({
+      element: terminal.textarea ?? container,
+      selection: terminal.getSelection(),
+      canPaste: !terminal.options.disableStdin,
+      canSelectAll: terminal.buffer.active.length > 0,
+      restore: () => terminal.focus(),
+      selectAll: () => terminal.selectAll(),
+    }));
     terminal.attachCustomKeyEventHandler((event) => {
       if (event.type !== "keydown") return true;
       const key = event.key.toLowerCase();
@@ -228,6 +239,7 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
       window.removeEventListener("offline", pageHide);
       window.removeEventListener("online", connect);
       terminal.dispose();
+      unregisterContextMenu();
       terminalRef.current = null;
       refitRef.current = () => {};
     };

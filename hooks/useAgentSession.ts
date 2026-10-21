@@ -1,4 +1,5 @@
 "use client";
+import { copyText } from "@/lib/clipboard";
 
 import { type PermissionMode } from "@/lib/permission-mode";
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo, useReducer } from "react";
@@ -2261,7 +2262,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           const data = await sendAgentCommand<LastAssistantTextResponse>(sid, { type: "get_last_assistant_text" });
           const textToCopy = data?.text ?? "";
           if (!textToCopy) return complete({ handled: true, error: "No assistant message to copy" });
-          await navigator.clipboard.writeText(textToCopy);
+          await copyText(textToCopy);
           return complete({ handled: true, message: "Copied last assistant message" });
         }
 

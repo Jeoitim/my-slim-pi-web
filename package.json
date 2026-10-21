@@ -1,6 +1,6 @@
 {
   "name": "my-slim-pi-web",
-  "version": "0.12.2-jeoitim.1",
+  "version": "0.12.2-jeoitim.2",
   "description": "My Slim Pi 的 WebUI 最简实现",
   "license": "MIT",
   "engines": {
@@ -44,7 +44,8 @@
     "desktop:pack:dir": "node electron/scripts/pack.mjs --dir",
     "test:desktop": "node --experimental-strip-types --test electron/tests/*.test.mjs",
     "test:desktop:app": "node electron/scripts/e2e.mjs",
-    "test:desktop:packaged": "node electron/scripts/e2e.mjs --packaged"
+    "test:desktop:packaged": "node electron/scripts/e2e.mjs --packaged",
+    "test:desktop:clipboard": "node electron/scripts/clipboard-check.mjs"
   },
   "dependencies": {
     "@earendil-works/pi-agent-core": "1.3.0",

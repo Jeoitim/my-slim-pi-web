@@ -1,6 +1,39 @@
 # Desktop 交付与验证记录
 
-验证日期：2026-10-20。Windows x64 / PowerShell 7；开发 Node.js 24.20.0，Electron 44.9.1（内含 Node.js 24.22.0），electron-builder 26.15.3。后端运行在随包的独立 Node.js 24.20.0，不依赖 Electron ABI 或系统 Node。
+验证日期：2026-10-21。Windows x64 / PowerShell 7；开发 Node.js 24.20.0，Electron 44.9.1（内含 Node.js 24.22.0），electron-builder 26.15.3。后端运行在随包的独立 Node.js 24.20.0，不依赖 Electron ABI 或系统 Node。
+
+## 0.12.2-jeoitim.2 右键菜单与剪贴板修复
+
+当前产物：`dist-desktop/My Slim Pi Web Setup 0.12.2-jeoitim.2.exe`，141,523,867 字节（约 135.0 MiB）。SHA256：`cc171ced445e8dd0b31e5f2dda5505764caad92ffb7905dac3b4d2aa95d1502c`，同目录有 `.sha256` 文件。
+
+桌面构建增加不经过应用画布的文本右键菜单。会话正文、代码块、输入框、文件/文档预览和终端分别提供适用的复制、全选、粘贴操作；菜单 portal 到 `body`，避开 36px 标题区，并在视口边缘翻向或收进可见范围。终端菜单覆盖显示区及其外围留白，使用终端自己的明暗主题；普通菜单使用应用主题。代码复制按钮、`/copy` 和右键复制统一经过受限的 Electron IPC；只有系统剪贴板写入成功后按钮才显示“已复制”。
+
+| 本轮检查 | 结果 |
+| --- | --- |
+| TypeScript / 全仓库 ESLint | 通过 |
+| 剪贴板单元测试 | 3/3 |
+| 桌面 IPC / 安全边界 / 构建暂存 | 8/8；包含重复构建清除旧路由缓存和不完整构建保留上一份暂存资源 |
+| 侧栏菜单组件与定位 | 16/16 |
+| 语言包 / 既有会话菜单回归 | 12/12 |
+| 隔离生产构建与 NSIS 打包 | 通过；随包 Node.js 24.20.0，Electron 44.9.1 |
+| 生产 Web 资源 + 桌面桥模拟 | 代码复制精确；正文、输入框、文件预览、终端菜单通过；输入框和终端粘贴入口通过 |
+| 菜单边界 | 页面右下角、全宽文件面板、终端右下角均未被画布裁切；实际点击终端底部留白通过；门户父节点为 `body` |
+| 终端主题 | 深色 `#181b21`、浅色 `#f3f4f6` 均与终端面板一致 |
+| 简体中文菜单字体 | fontcheck 0 error / 0 warning；Microsoft YaHei UI / Microsoft YaHei / `--font-ui` |
+| 实际 Electron / NSIS 安装版 | 两者完整回归通过，均保留 sandbox、contextIsolation，关闭 nodeIntegration |
+| 系统剪贴板 | 代码内容精确一致；正文、输入框、文件和终端复制通过；输入框与真实 PTY 原生粘贴通过；测试后恢复原剪贴板 |
+| 终端全宽 → 还原 | 1280px、850px 两种窗口均实际点击通过 |
+| 强制退出 / 后端清理 / 再启动恢复 | 实际安装位置通过 |
+| 隔离安装 / 覆盖安装 / 卸载 | 安装与覆盖安装退出 0；最终卸载退出 0，测试应用可执行文件已移除 |
+| 空配置独立启动 | 3/3；6.012、7.737、5.056 秒，中位数 6.012 秒；无 Retry 导航、无上游更新请求、标题栏无 SVG 图标 |
+
+此前 Codex 专用 sandbox 账户的启动阻塞已解除。本轮在普通用户 `timrt`、full access 环境下直接运行 `dist-desktop/win-unpacked/MySlimPiWeb.exe`，并安装到 `.local/desktop-install-validation-20261021-final/桌面 应用` 后启动其中的 exe。测试使用独立 AgentRoot 和 userData；安装目录的父级故意保留会抛错的 `next.config.js`，实际安装版仍正常启动。没有改动真实 Agent 数据或现存用户安装。
+
+实际验证还发现旧 `.desktop/server` 中残留的 Next 运行时 `server/route-cache` 会让新包继续返回旧 HTML、加载旧脚本。构建改为验证新 standalone 产物后重新创建生成目录，连续构建回归覆盖此问题；覆盖安装旧测试产物后，终端右下角留白处菜单也通过，确认安装后运行的是本次代码。安装、卸载和应用回归串行执行，避免 NSIS 关闭测试实例。
+
+运行目录的剪贴板与边缘截图位于 `.local/desktop-clipboard-b1c561a5-e97f-463d-aaf2-c3d82e22ad91/`，实际安装版位于 `.local/desktop-clipboard-1ea0aa5f-1c0c-4e85-8d32-8cdd10b6fc7a/`；两个目录均包含终端明暗主题截图。早期浏览器桥模拟证据仍保存在 `.local/desktop-browser-context-menu/`。启动样本保存在 `.local/desktop-startup-after.json`，计时到 React 控件就绪；未重启操作系统或清空磁盘缓存。
+
+本轮未重跑完整 Web 套件，历史非全绿结果保留在下文。Linux、macOS、真实 Cloudflare 和付费模型调用未在本轮重新验收。未推送、创建 PR 或发布。
 
 ## 0.12.2-jeoitim.1 修复版
 

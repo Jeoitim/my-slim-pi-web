@@ -21,6 +21,8 @@ Electron 是宿主，Next.js / Pi SDK 仍是唯一后端。聊天、会话、权
 
 保持 `nodeIntegration:false`、`contextIsolation:true`、`sandbox:true`、`webSecurity:true`。IPC 检查主窗口、主 Frame、精确 origin 和应用页面路径；没有泛用 shell、原始 IPC、require 或任意 URL 打开能力。导出/预览窗口不加载 preload，禁用脚本。普通浏览器不显示桌面设置；PWA 不依赖 Electron。
 
+桌面窗口的会话正文、代码、输入框、文件预览和终端提供与主题一致的文本右键菜单，按区域提供复制、全选和粘贴。菜单挂载在页面根部并限制在标题区下方的可见窗口内，避免被滚动画布或全宽面板裁切；终端菜单跟随终端自己的明暗主题。复制按钮和 `/copy` 通过受限 IPC 写入系统剪贴板，写入成功后才显示成功；粘贴使用编辑器和终端原有的原生粘贴事件，不向页面暴露通用剪贴板读取接口。
+
 ## 开发和打包
 
 在原生 Windows/Linux x64 安装 Node.js **24 LTS**，各平台独立安装依赖：
@@ -41,6 +43,8 @@ npm run desktop:pack
 取舍：utilityProcess 和 Electron Node 模式依赖所选 Electron 的 Node 版本/ABI，后者还依赖模式开关。独立 Node 24 包体较大，但可直接验证 Web 运行条件和 node-pty ABI；不降低 engines，不进行 Electron ABI 重建。
 
 使用 Next standalone 布局，再安装完整锁定的生产依赖以保留 SDK 动态导入、模板和原生资源，同时复制 public 与 Next static。Node/npm、后端启动脚本及 node-pty 放在 `extraResources` 的 ASAR 外；独立 Node 无法读取 ASAR。生产按 Next 生成的 standalone 启动器设置序列化配置，无需 TypeScript，也不向父目录查找源码配置或 `.env`；仅向 `next()` 传入 `conf` 不够，其 custom-server 的 `prepare()` 不会将该选项传给路由初始化。构建最后用随包 Node 启动真实 PTY，检查输出及退出。
+
+每次构建先验证 standalone 产物，再重新创建生成目录 `.desktop/server`。不要把新版本直接覆盖进运行过的旧目录：Next 的运行时路由缓存可能保留旧 HTML，导致新安装包继续加载旧脚本。此步骤不清理开发用的 `.next` 或用户数据。
 
 Windows 的打包脚本对固定版本 electron-builder 26.15.3 的 NSIS 缓存重命名故障提供小范围降级：仅在官方校验和完整解压已完成、最终 rename 返回 EPERM 时，用工具支持的目录覆盖继续。路径必须在本次构建缓存内，不修改第三方源码或伪造缓存完成状态。下载受网络限制时，可为构建过程设置 `ELECTRON_MIRROR` / `ELECTRON_BUILDER_BINARIES_MIRROR` 为可信镜像；仍保留校验。
 
@@ -77,7 +81,7 @@ Linux 使用 export / read -rsp。不要将密码放入源码、命令行参数�
 
 启动时 Node 后端与原生窗口并行初始化，窗口隐藏创建，服务就绪后直接加载应用，在首次可绘制时显示。正常启动不加载错误页，不执行一次多余的停止/重启；Retry 只在真实失败时出现。健康请求使用原生 loopback HTTP，终端、文件预览、子代理预览和设置面板按需加载，不在聊天首页初始化 xterm 等可选模块。
 
-版本采用 `<上游基准版本>-jeoitim.<修订号>`，当前为 `0.12.2-jeoitim.1`。同一上游基准递增修订号，完成新上游版本的独立集成 PR 后，基准更新并从 `.1` 开始。页面不请求上游更新接口；即使直接调用 `/api/app-update`，fork 版本也只返回本地版本，不连接 npm 上游或推荐上游安装包。此规则同时适用于本 fork 的 Web 版。
+版本采用 `<上游基准版本>-jeoitim.<修订号>`，当前为 `0.12.2-jeoitim.2`。同一上游基准递增修订号，完成新上游版本的独立集成 PR 后，基准更新并从 `.1` 开始。页面不请求上游更新接口；即使直接调用 `/api/app-update`，fork 版本也只返回本地版本，不连接 npm 上游或推荐上游安装包。此规则同时适用于本 fork 的 Web 版。
 
 首版无自动更新器。退出应用后安装新版本；卸载保留 userData，安装不覆盖 AgentRoot、凭据、模型、技能和会话。回退用此前验证的安装包并保留用户目录。不要用上游 pi-web 自动更新覆盖 fork。首版安装包未签名，发布签名与可信下载另行处理。
 
@@ -88,5 +92,7 @@ Linux 使用 export / read -rsp。不要将密码放入源码、命令行参数�
 运行 `npm run typecheck`、`npm run lint`、`npm test`、`npm run test:permissions`、`npm run test:desktop`。桌面测试覆盖配置/损坏、IPC 来源、签名伪造、双入口共享状态、流式输出、端口冲突回退和关闭入口后内部存活。生产资源验证包含真实 PTY。开发窗口成功不能替代实际安装产物验证；各平台与 Cloudflare 未验证项必须在交付中说明。
 
 `npm run test:desktop:app` 验证开发窗口；`npm run test:desktop:packaged` 验证 Windows 运行目录。设置 `PI_DESKTOP_E2E_EXECUTABLE` 可验证实际安装位置；全部使用 `.local` 隔离 AgentRoot 和 userData。`node electron/scripts/crash-check.mjs` 验证强制退出及恢复。实际记录见 [desktop-validation.md](desktop-validation.md)。
+
+安装、卸载和应用回归必须串行执行。NSIS 安装器会关闭正在运行的同名应用，即使该实例来自另一个测试目录，也会中断 Electron 回归。
 
 `node electron/scripts/startup-check.mjs` 测量打包应用三次独立空用户目录启动，记录进程拉起到 React 控件就绪的耗时，并断言正常启动没有 Retry 导航、没有上游检查请求、没有重复的全屏图标。`--baseline` 可记录旧产物；不要在测量间替换同一个运行目录。`node electron/scripts/startup-failure-check.mjs` 模拟缺失 Node，检查真实失败仍显示可见、可重试的错误窗口。

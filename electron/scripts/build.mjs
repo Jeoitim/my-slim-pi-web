@@ -4,6 +4,7 @@ import { dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
+import { stageNextResources } from "./stage-resources.mjs";
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const require = createRequire(import.meta.url);
 if (Number(process.versions.node.split(".")[0]) !== 24) throw new Error("Build desktop releases with Node.js 24 LTS (the executable is bundled)");
@@ -27,12 +28,9 @@ await mkdir(server, { recursive: true });
 await mkdir(runtime, { recursive: true });
 console.log("Building Next.js into the isolated .desktop/next directory…");
 if (!process.argv.includes("--resources-only") && process.env.PI_DESKTOP_RESOURCES_ONLY !== "1") await run(process.execPath, [require.resolve("next/dist/bin/next"), "build", "--webpack"]);
-const nextOutput = join(root, ".desktop/next");
 // Standalone establishes the deployment layout; complete production dependencies below
 // retain SDK dynamic imports, extension templates, and native binaries tracing can miss.
-await cp(join(nextOutput, "standalone"), server, { recursive: true, force: true });
-await cp(join(nextOutput, "static"), join(server, ".desktop/next/static"), { recursive: true, force: true });
-await cp(join(root, "public"), join(server, "public"), { recursive: true, force: true });
+await stageNextResources(root);
 const manifest = JSON.parse(await readFile(join(root, "package.json"), "utf8"));
 await import("./stage-host.mjs");
 const productionManifest = { ...manifest, scripts: {}, devDependencies: {}, main: undefined };

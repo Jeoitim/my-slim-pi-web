@@ -5,6 +5,11 @@ export const enLocale: LocalePlugin = {
   id: "en",
   label: "English",
   messages: {
+    "desktop.paste": "Paste",
+    "desktop.selectAll": "Select all",
+    "desktop.textMenu": "Text actions",
+    "desktop.clipboardFailed": "Clipboard action failed. Please try again.",
+    "i18n.copyFailed": "Copy failed",
     "desktop.title": "Desktop",
     "desktop.externalControl": "External control",
     "desktop.localWeb": "Local Web entrance",

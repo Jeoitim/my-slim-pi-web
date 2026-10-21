@@ -4,6 +4,7 @@ const { pathToFileURL } = require("node:url");
 const { DesktopService } = require("./service.cjs");
 const { readSettings, writeSettings, validatePatch } = require("./settings.cjs");
 const { assertSender, isAppUrl, externalLink } = require("./security.cjs");
+const { validateClipboardText } = require("./clipboard.cjs");
 const { version } = require("../../package.json");
 const { existsSync } = require("node:fs");
 
@@ -169,6 +170,10 @@ function registerIpc() {
     return action(...args);
   });
   handle("settings", () => ({ ...settings }));
+  handle("clipboard-write", text => clipboard.writeText(validateClipboardText(text)));
+  // Deliver the real paste event (text/images) to the focused editor/xterm.
+  // No unrestricted clipboard-reading bridge is exposed to the renderer.
+  handle("paste", () => { window.webContents.paste(); });
   handle("status", () => ({ ...service.status }));
   handle("update", patch => serial(async () => {
     const next = { ...settings, ...validatePatch(patch) };
@@ -182,7 +187,7 @@ function registerIpc() {
   handle("open-web", openWeb);
   handle("copy-web", () => {
     if (!service.status.externalUrl || service.status.phase !== "running") throw new Error("External control is not running");
-    clipboard.writeText(service.status.externalUrl);
+    return clipboard.writeText(service.status.externalUrl);
   });
   handle("restart", () => serial(restart));
   handle("quit", () => { app.quit(); });

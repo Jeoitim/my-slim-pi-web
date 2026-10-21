@@ -15,6 +15,8 @@ export interface ServiceStatus {
 export interface DesktopBridge {
   readonly platform: "win32" | "darwin" | "linux";
   getSettings(): Promise<DesktopSettings>;
+  writeClipboardText(text: string): Promise<void>;
+  paste(): Promise<void>;
   getStatus(): Promise<ServiceStatus>;
   updateSettings(patch: Partial<DesktopSettings>): Promise<DesktopSettings>;
   openLocalWeb(): Promise<void>;

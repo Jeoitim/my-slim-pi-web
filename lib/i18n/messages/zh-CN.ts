@@ -5,6 +5,11 @@ export const zhCNLocale: LocalePlugin = {
   id: "zh-CN",
   label: "简体中文",
   messages: {
+    "desktop.paste": "粘贴",
+    "desktop.selectAll": "全选",
+    "desktop.textMenu": "文本操作",
+    "desktop.clipboardFailed": "剪贴板操作失败，请重试。",
+    "i18n.copyFailed": "复制失败",
     "desktop.title": "桌面应用",
     "desktop.externalControl": "外部控制",
     "desktop.localWeb": "本地 Web 入口",

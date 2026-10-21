@@ -12,6 +12,15 @@ const { createListeners } = require("../server/listeners.cjs");
 const { defaults, validatePatch, readSettings, writeSettings } = require("../main/settings.cjs");
 const { isAppUrl, externalLink, assertSender } = require("../main/security.cjs");
 const { DesktopService } = require("../main/service.cjs");
+const { validateClipboardText, MAX_CLIPBOARD_TEXT_LENGTH } = require("../main/clipboard.cjs");
+
+test("clipboard IPC accepts bounded text only", () => {
+  assert.equal(validateClipboardText("代码\n"), "代码\n");
+  assert.equal(validateClipboardText(""), "");
+  for (const value of [null, 1, {}, ["text"], "x".repeat(MAX_CLIPBOARD_TEXT_LENGTH + 1)]) {
+    assert.throws(() => validateClipboardText(value), /Invalid clipboard/);
+  }
+});
 
 test("a missing Node runtime fails promptly and leaves no owned child", async () => {
   const service = new DesktopService({ node: join(tmpdir(), "pi-missing-runtime", "node.exe"), root: process.cwd(), version: "test", dev: false });

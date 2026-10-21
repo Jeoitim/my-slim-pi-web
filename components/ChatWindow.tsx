@@ -1097,7 +1097,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
           style={{ visibility: pendingScrollRestore ? "hidden" : undefined }}
         >
           <div style={{ minWidth: 0, padding: `0 ${CHAT_COLUMN_PADDING}px` }}>
-            <div ref={messageContentRef} onPointerUp={captureQuotedSelection} style={{ width: "100%", minWidth: 0, maxWidth: "var(--chat-content-max-width, 820px)", margin: "0 auto" }}>
+            <div ref={messageContentRef} data-desktop-text-scope="transcript" onPointerUp={captureQuotedSelection} style={{ width: "100%", minWidth: 0, maxWidth: "var(--chat-content-max-width, 820px)", margin: "0 auto" }}>
             {(() => {
               let lastUserIdx = -1;
               for (let i = messages.length - 1; i >= 0; i--) {

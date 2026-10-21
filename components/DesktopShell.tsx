@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, type ReactNode } from "react";
 import { useDesktop } from "@/hooks/useDesktop";
+import { DesktopContextMenu } from "./DesktopContextMenu";
 
 export function DesktopShell({ children }: { children: ReactNode }) {
   const desktop = useDesktop();
@@ -28,5 +29,6 @@ export function DesktopShell({ children }: { children: ReactNode }) {
       </div>
     </header>}
     <div className={desktop ? "desktop-content" : undefined}>{children}</div>
+    {desktop && <DesktopContextMenu />}
   </>;
 }

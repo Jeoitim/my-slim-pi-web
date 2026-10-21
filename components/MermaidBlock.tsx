@@ -288,6 +288,7 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isS
   const { isDark } = useTheme();
   const { t } = useI18n();
   const [copied, setCopied] = useState(false);
+  const [copyFailed, setCopyFailed] = useState(false);
   // Loading starts with the first block, streaming or not, so a streamed
   // reply usually finds the languages ready when it ends.
   const languagesReady = usePrismLanguages();
@@ -301,10 +302,11 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isS
   }, [isStreaming, highlighted, languagesReady]);
 
   const copy = () => {
+    setCopyFailed(false);
     copyText(code).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 1500);
-    });
+    }).catch(() => setCopyFailed(true));
   };
 
   return (
@@ -317,7 +319,7 @@ export const CodeBlock = memo(function CodeBlock({ code, lang, headerAction, isS
             onClick={copy}
             className="markdown-code-action"
           >
-            {copied ? t("i18n.copied") : t("i18n.copy")}
+            {copyFailed ? t("i18n.copyFailed") : copied ? t("i18n.copied") : t("i18n.copy")}
           </button>
         </div>
       </div>

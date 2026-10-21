@@ -1,6 +1,6 @@
 "use client";
 
-import { Children, useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type Ref, type SyntheticEvent } from "react";
+import { Children, useEffect, useLayoutEffect, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode, type Ref, type SyntheticEvent } from "react";
 import { createPortal } from "react-dom";
 import { CheckIcon } from "./SidebarIcons";
 
@@ -95,6 +95,10 @@ export interface SidebarMenuFilter {
 export const SIDEBAR_MENU_FILTER_MIN_CHOICES = 8;
 
 export interface SidebarMenuProps {
+  surfaceClassName?: string;
+  surfaceStyle?: CSSProperties;
+  /** Desktop chrome excluded from the visible menu placement area. */
+  topInset?: number;
   open: boolean;
   anchor: SidebarMenuAnchor | null;
   /** True on a phone (≤640px): a bottom sheet with its own backdrop. */
@@ -378,6 +382,8 @@ const isolateEvents = {
 };
 
 export interface SidebarMenuSurfaceProps {
+  surfaceClassName?: string;
+  surfaceStyle?: CSSProperties;
   sheet: boolean;
   ariaLabel: string;
   title?: string;
@@ -476,6 +482,8 @@ function MenuItemButton({ item, onActivate }: { item: ActionItem; onActivate: Si
  * handling `SidebarMenu` adds around it.
  */
 export function SidebarMenuSurface({
+  surfaceClassName,
+  surfaceStyle,
   sheet,
   ariaLabel,
   title,
@@ -538,10 +546,10 @@ export function SidebarMenuSurface({
     return (
       <div
         ref={surfaceRef}
-        className={classic ? "sidebar-menu is-classic" : "sidebar-menu"}
+        className={`${classic ? "sidebar-menu is-classic" : "sidebar-menu"}${surfaceClassName ? ` ${surfaceClassName}` : ""}`}
         role={menuRole ?? "dialog"}
         aria-label={ariaLabel}
-        style={{ width }}
+        style={{ width, ...surfaceStyle }}
         {...isolateEvents}
       >
         {body}
@@ -571,6 +579,9 @@ export function SidebarMenuSurface({
 }
 
 export function SidebarMenu({
+  surfaceClassName,
+  surfaceStyle,
+  topInset = 0,
   open,
   anchor,
   sheet,
@@ -633,9 +644,9 @@ export function SidebarMenu({
       const rect = surface.getBoundingClientRect();
       const { left, top } = placeSidebarMenu(current, { width: rect.width, height: rect.height }, {
         left: viewport?.offsetLeft ?? 0,
-        top: viewport?.offsetTop ?? 0,
+        top: (viewport?.offsetTop ?? 0) + topInset,
         width: viewport?.width ?? window.innerWidth,
-        height: viewport?.height ?? window.innerHeight,
+        height: Math.max(0, (viewport?.height ?? window.innerHeight) - topInset),
       });
       surface.style.left = `${left}px`;
       surface.style.top = `${top}px`;
@@ -652,7 +663,7 @@ export function SidebarMenu({
       viewport?.removeEventListener("resize", position);
       viewport?.removeEventListener("scroll", position);
     };
-  }, [visible, sheet, anchorKey, custom]);
+  }, [visible, sheet, anchorKey, custom, topInset]);
 
   useEffect(() => {
     setFilterQuery("");
@@ -775,6 +786,8 @@ export function SidebarMenu({
 
   return createPortal(
     <SidebarMenuSurface
+      surfaceClassName={surfaceClassName}
+      surfaceStyle={surfaceStyle}
       sheet={sheet}
       ariaLabel={ariaLabel}
       title={title}

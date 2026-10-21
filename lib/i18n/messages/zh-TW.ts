@@ -5,6 +5,11 @@ export const zhTWLocale: LocalePlugin = {
   id: "zh-TW",
   label: "繁體中文",
   messages: {
+    "desktop.paste": "貼上",
+    "desktop.selectAll": "全選",
+    "desktop.textMenu": "文字操作",
+    "desktop.clipboardFailed": "剪貼簿操作失敗，請重試。",
+    "i18n.copyFailed": "複製失敗",
     "desktop.title": "桌面應用",
     "desktop.externalControl": "外部控制",
     "desktop.localWeb": "本機 Web 入口",
