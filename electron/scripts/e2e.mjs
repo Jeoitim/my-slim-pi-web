@@ -35,6 +35,15 @@ const app = await electron.launch({
 });
 app.process().stdout?.on("data", data => process.stdout.write(data));
 app.process().stderr?.on("data", data => process.stderr.write(data));
+async function waitForWindowVisibility(visible) {
+  const deadline = Date.now() + 10_000;
+  while (Date.now() < deadline) {
+    const current = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0]?.isVisible() ?? false);
+    if (current === visible) return;
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+  throw new Error(`Window did not become ${visible ? "visible" : "hidden"}`);
+}
 let privateOrigin;
 try {
   const page = await app.firstWindow();
@@ -103,16 +112,21 @@ try {
   });
   assert.equal(await remoteStatus("agent.example.test"), 200);
   assert.equal(await remoteStatus("unlisted.example.test"), 403);
+  console.log("[e2e] closing the window with external control enabled");
   await app.evaluate(({ BrowserWindow }) => { BrowserWindow.getAllWindows()[0].close(); });
+  await waitForWindowVisibility(false);
   assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), false);
   assert.equal((await publicApi("/api/sessions")).status, 200);
   // A second launch must focus the same host instead of starting another backend.
+  console.log("[e2e] launching a second instance");
   await new Promise((resolve, reject) => {
     const second = spawn(executablePath, launchArgs, { env: environment, stdio: "ignore", windowsHide: true });
     const deadline = setTimeout(() => { second.kill(); reject(new Error("Second instance did not exit")); }, 15_000);
     second.once("error", reject); second.once("exit", () => { clearTimeout(deadline); resolve(); });
   });
+  await waitForWindowVisibility(true);
   assert.equal(await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].isVisible()), true);
+  console.log("[e2e] second instance focused the existing host");
   assert.equal((await page.evaluate(() => window.piDesktop.getStatus())).externalUrl, status.externalUrl);
   await page.evaluate(() => window.piDesktop.updateSettings({ externalControl: false }));
   await assert.rejects(fetch(status.externalUrl));
@@ -121,6 +135,7 @@ try {
   const persisted = JSON.parse(await readFile(join(userData, "desktop-settings.json"), "utf8"));
   assert.equal(persisted.externalControl, false); assert.equal(persisted.port, port);
   // Opening optional panels must still work after moving them off the startup path.
+  console.log("[e2e] closing settings and opening the fixture session");
   await page.locator(".settings-dialog-close").click();
   await page.goto(`${privateOrigin}/?session=${fixtureId}`);
   await page.getByText("Desktop shared-backend verification", { exact: true }).waitFor();
@@ -128,8 +143,10 @@ try {
   const fold = files.locator(".sidebar-files-section-toggle");
   await fold.waitFor();
   if (await fold.getAttribute("aria-expanded") !== "true") await fold.click();
+  console.log("[e2e] opening the lazy file viewer");
   await files.getByText("desktop-lazy-viewer.txt", { exact: true }).click();
   await page.locator("#file-panel").getByText("Desktop lazy file viewer verification", { exact: true }).waitFor();
+  console.log("[e2e] opening the terminal");
   const [terminalResponse] = await Promise.all([
     page.waitForResponse(response => new URL(response.url()).pathname === "/api/terminal" && response.request().method() === "POST"),
     page.getByRole("button", { name: "打开工作区终端", exact: true }).click(),
@@ -163,7 +180,14 @@ try {
   if (page) await page.screenshot({ path: join(area, "failure.png") }).catch(() => {});
   throw error;
 } finally {
+  const child = app.process();
   await app.close();
+  if (child.exitCode === null) {
+    await Promise.race([
+      new Promise(resolve => child.once("exit", resolve)),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Electron host did not exit after app.close()")), 15_000)),
+    ]);
+  }
   if (privateOrigin) {
     await assert.rejects(fetch(privateOrigin));
     console.log("Host exited and owned service listener stopped.");

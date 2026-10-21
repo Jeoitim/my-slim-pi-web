@@ -189,11 +189,22 @@ export function killTerminal(id: string, force = false): boolean {
   if (record.cleanupTimer) clearTimeout(record.cleanupTimer);
   registry().delete(id);
   if (!record.exited) {
-    record.pty.kill(force ? "SIGKILL" : undefined);
+    const stop = (hard: boolean) => {
+      try {
+        // node-pty on Windows implements termination through ConPTY and rejects
+        // POSIX signal arguments, including an explicit undefined argument.
+        if (process.platform === "win32") record.pty.kill();
+        else record.pty.kill(hard ? "SIGKILL" : undefined);
+      } catch {
+        // The PTY may have exited between the check and kill. Shutdown must
+        // continue so other terminals and the Agent server can stop.
+      }
+    };
+    stop(force);
     // A shell may trap SIGHUP; explicit close and lease expiry must still finish.
     if (!force) {
       record.cleanupTimer = setTimeout(() => {
-        if (!record.exited) record.pty.kill("SIGKILL");
+        if (!record.exited) stop(true);
       }, 2000);
       record.cleanupTimer.unref?.();
     }

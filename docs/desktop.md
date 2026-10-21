@@ -15,6 +15,8 @@ Electron 是宿主，Next.js / Pi SDK 仍是唯一后端。聊天、会话、权
 
 同机浏览器也走受限制入口；终端和配置维护等完整本地能力在桌面窗口使用。关闭外部控制会真正关闭固定监听端口及其连接，内部入口与 Agent 不受影响。这不是操作系统用户隔离：同一用户仍能调试进程或读取自己的 Agent 文件。
 
+扩展兼容保持与 Pi TUI 同义：`pi-ask-user` 在 RPC/Web 模式使用 Pi 的 `select`/`input` 对话框，由桌面和浏览器渲染成原生表单；`pi-subagents` 的 `subagent-async` 与 `subagent-inspect` JSON widget 分别转为 Fleet 列表和任务检查器。上游 `/subagents`、Fleet Inspector 和插件页面继续保留，不用桌面专用字段改写扩展 API。
+
 ## 窗口与 IPC
 
 `titleBarStyle:hidden` 移除系统标题条。macOS 原生交通灯内嵌于左上方；Windows/Linux 用 `titleBarOverlay` 把平台按钮叠加到 36px 应用顶部。颜色跟随现有主题，保留系统拖动、缩放、最大化双击及 Windows Snap。标题区只保留产品名称文字和平台按钮，不放品牌图标或额外全屏图标；全屏可用平台按钮或菜单 / F11。使用 `titlebar-area-*` 安全区避免按钮重叠。文件 / 终端面板全宽展开和窄窗口覆盖时都避开 36px 标题区，确保还原与关闭按钮可见。macOS/Linux 实际窗口管理器表现需要各平台验收。
@@ -65,7 +67,7 @@ Linux 使用 export / read -rsp。不要将密码放入源码、命令行参数�
 
 端口接受 1–65535 整数，低于 1024 可能需要额外权限。变更先绑定新端口，成功才关闭旧入口；冲突保留旧入口和 Agent 会话。配置持久化失败恢复原入口。无需重启后端，但需同步修改 Tunnel 目标端口。
 
-“重启服务”会停止整个本应用后端，等待退出、重新启动并检查就绪。它会中断正在执行的任务、终端和 ASK 等待，不会批准待审操作；只切换外部入口/端口不重启后端。
+“重启服务”会停止整个本应用后端，等待退出、重新启动并检查就绪。它会中断正在执行的任务、终端和 ASK 等待，不会批准待审操作；只切换外部入口/端口不重启后端。重启前会切回启动页，就绪后自动进入 WebUI。
 
 ## Cloudflare
 
@@ -75,11 +77,11 @@ Linux 使用 export / read -rsp。不要将密码放入源码、命令行参数�
 
 ## 生命周期和更新
 
-外部入口关闭时，关闭窗口退出应用；外部入口运行且托盘可用时关闭窗口隐藏到托盘，可重新打开、访问 Web、查看状态、重试或退出。托盘失败退化为关闭即退出。显式退出只清理本应用持有的子进程，不按名字杀其他 Node/Next/Pi。
+关闭窗口不再无提示地中断任务。若 `/api/agent/running` 或扩展 liveness 报告有运行回合、审批等待或后台代理，窗口会给出“继续在后台 / 停止任务并退出 / 取消”；选择后台只隐藏窗口，Electron 与独立 Node 后端继续运行，可从托盘重新打开。没有活动任务时保持原行为：外部入口运行时隐藏到托盘，否则正常退出。显式退出在有活动工作时也要二次确认；确认后才停止本应用持有的子进程，不按名字杀其他 Node/Next/Pi。
 
 单实例锁避免重复宿主。IPC 就绪消息和带凭据的健康请求确认服务可用，不用固定延时。配置/重启操作串行。父进程崩溃或被强制结束时，IPC disconnect 触发后端退出，并有期限兜底防止孤儿。不会连接来源不明的残留服务。失败显示本地重试页，也可从托盘重试。
 
-启动时 Node 后端与原生窗口并行初始化，窗口隐藏创建，服务就绪后直接加载应用，在首次可绘制时显示。正常启动不加载错误页，不执行一次多余的停止/重启；Retry 只在真实失败时出现。健康请求使用原生 loopback HTTP，终端、文件预览、子代理预览和设置面板按需加载，不在聊天首页初始化 xterm 等可选模块。
+启动时 Node 后端与原生窗口并行初始化。窗口先显示本地 `loading.html`：居中品牌图标、双语句子和不确定进度条；服务、健康检查和必要配置都就绪后自动导航到 WebUI。正常启动不显示 Retry，不执行一次多余的停止/重启；真实失败才切到错误页。健康请求使用原生 loopback HTTP，终端、文件预览、子代理预览和设置面板按需加载，不在聊天首页初始化 xterm 等可选模块。
 
 版本采用 `<上游基准版本>-jeoitim.<修订号>`，当前为 `0.12.2-jeoitim.2`。同一上游基准递增修订号，完成新上游版本的独立集成 PR 后，基准更新并从 `.1` 开始。页面不请求上游更新接口；即使直接调用 `/api/app-update`，fork 版本也只返回本地版本，不连接 npm 上游或推荐上游安装包。此规则同时适用于本 fork 的 Web 版。
 
@@ -91,8 +93,8 @@ Linux 使用 export / read -rsp。不要将密码放入源码、命令行参数�
 
 运行 `npm run typecheck`、`npm run lint`、`npm test`、`npm run test:permissions`、`npm run test:desktop`。桌面测试覆盖配置/损坏、IPC 来源、签名伪造、双入口共享状态、流式输出、端口冲突回退和关闭入口后内部存活。生产资源验证包含真实 PTY。开发窗口成功不能替代实际安装产物验证；各平台与 Cloudflare 未验证项必须在交付中说明。
 
-`npm run test:desktop:app` 验证开发窗口；`npm run test:desktop:packaged` 验证 Windows 运行目录。设置 `PI_DESKTOP_E2E_EXECUTABLE` 可验证实际安装位置；全部使用 `.local` 隔离 AgentRoot 和 userData。`node electron/scripts/crash-check.mjs` 验证强制退出及恢复。实际记录见 [desktop-validation.md](desktop-validation.md)。
+`npm run test:desktop:app` 验证开发窗口；`npm run test:desktop:packaged` 验证 Windows 运行目录。设置 `PI_DESKTOP_E2E_EXECUTABLE` 可验证实际安装位置；全部使用 `.local` 隔离 AgentRoot 和 userData。`npm run test:desktop:startup-loading` 验证启动页先于 WebUI 出现并自动交接；`npm run test:desktop:lifecycle` 用阻塞扩展命令验证关闭提示、后台继续和退出后后端终止。`node electron/scripts/crash-check.mjs` 验证强制退出及恢复。实际记录见 [desktop-validation.md](desktop-validation.md)。
 
 安装、卸载和应用回归必须串行执行。NSIS 安装器会关闭正在运行的同名应用，即使该实例来自另一个测试目录，也会中断 Electron 回归。
 
-`node electron/scripts/startup-check.mjs` 测量打包应用三次独立空用户目录启动，记录进程拉起到 React 控件就绪的耗时，并断言正常启动没有 Retry 导航、没有上游检查请求、没有重复的全屏图标。`--baseline` 可记录旧产物；不要在测量间替换同一个运行目录。`node electron/scripts/startup-failure-check.mjs` 模拟缺失 Node，检查真实失败仍显示可见、可重试的错误窗口。
+`node electron/scripts/startup-check.mjs` 测量打包应用三次独立空用户目录启动，记录进程拉起到 React 控件就绪的耗时，并断言正常启动没有 Retry 导航、没有上游检查请求、没有重复的全屏图标。`--baseline` 可记录旧产物；不要在测量间替换同一个运行目录。`node electron/scripts/startup-failure-check.mjs` 模拟缺失 Node，检查真实失败仍显示可见、可重试的错误窗口。两项启动检查都必须经过新的 loading 页。

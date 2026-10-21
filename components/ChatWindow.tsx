@@ -20,6 +20,7 @@ import { ChatInput, type ChatInputHandle } from "./ChatInput";
 import { ChatMinimap, useMessageRefs } from "./ChatMinimap";
 import { permissionModeFromStatuses, PERMISSION_MODE_STATUS } from "@/lib/permission-mode";
 import { ExtensionStatusBar } from "./ExtensionStatusBar";
+import { SubagentFleetView, SubagentInspectorDialog } from "./SubagentFleet";
 import { AnsiText } from "./AnsiText";
 import { useI18n } from "@/hooks/useI18n";
 import { phaseLabel } from "@/lib/chat-phase-label";
@@ -285,7 +286,9 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
     retryInfo, contextUsage, forkingEntryId,
     isCompacting, compactError, compactResult, displayModel: displayModelValue, modelSwitching, sessionStats,
     slashCommands, slashCommandsLoading, queuedMessages,
-    notices, extensionDialog, waitingExtensionDialogCount, extensionCustomUi, waitingExtensionCustomUiCount, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput, setNoticePaused, addNotice,
+    notices, extensionDialog, waitingExtensionDialogCount, extensionCustomUi, waitingExtensionCustomUiCount, extensionStatuses, extensionWidgets,
+    piSubagentFleet, fleetInspector, openFleetInspector, closeFleetInspector,
+    respondToExtensionUi, sendExtensionCustomInput, setNoticePaused, addNotice,
     isAutoModelSelection,
     isAutoThinkingSelection,
     defaultModel,
@@ -1086,6 +1089,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
         {extensionCustomUi && (
           <ExtensionCustomPanel key={extensionCustomUi.id} request={extensionCustomUi} waitingCount={waitingExtensionCustomUiCount} onInput={sendExtensionCustomInput} />
         )}
+        {fleetInspector && <SubagentInspectorDialog inspector={fleetInspector} onClose={closeFleetInspector} />}
         {!isEmptyNew && <>
         <div
           ref={scrollContainerRef}
@@ -1512,9 +1516,10 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
           </div>
         )}
         {chatInputElement}
+        <SubagentFleetView snapshot={piSubagentFleet} onInspect={(runId) => void openFleetInspector(runId)} />
         <ExtensionStatusBar
           statuses={extensionStatuses.filter(item => item.key !== PERMISSION_MODE_STATUS && (item.key !== "pi-permission-suite" || permissionModeFromStatuses(extensionStatuses) === null))}
-          widgets={extensionWidgets}
+          widgets={extensionWidgets.filter(widget => widget.key !== "subagent-inspect" && !(piSubagentFleet && widget.key === "subagent-async"))}
           onCommand={handleSend}
           commandsDisabled={sessionBusy}
         />

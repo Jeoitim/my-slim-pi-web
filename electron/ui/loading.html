@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'self'">
+  <title>My Slim Pi Web</title>
+  <link rel="stylesheet" href="loading.css">
+</head>
+<body>
+  <header aria-hidden="true"></header>
+  <main>
+    <svg class="mark" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 112 112" role="img" aria-label="My Slim Pi">
+      <rect width="112" height="112" rx="24" fill="currentColor" opacity=".08"/>
+      <g fill="currentColor" shape-rendering="crispEdges">
+        <path d="M16 16h60v20H56v20h20v20H36v20H16V16Zm20 20v20h20V36H36Zm40 20h20v40H76V56Z"/>
+      </g>
+    </svg>
+    <h1>My Slim Pi Web</h1>
+    <p class="zh">正在启动本地 Agent 服务…</p>
+    <p class="en">Starting the local Agent service…</p>
+    <div class="progress" role="progressbar" aria-label="Starting My Slim Pi Web"><span></span></div>
+    <p class="hint zh">首次启动或加载扩展可能需要几十秒。服务就绪后会自动进入工作区。</p>
+    <p class="hint en">First launch and extension loading can take a little while. The workspace opens automatically when ready.</p>
+  </main>
+  <footer>Local Agent · 127.0.0.1</footer>
+</body>
+</html>

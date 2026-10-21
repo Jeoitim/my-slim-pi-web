@@ -20,17 +20,66 @@ function checkHealth(origin, token) {
   });
 }
 
+function readInternalJson(origin, token, path, password) {
+  return new Promise((resolve, reject) => {
+    const headers = { "x-pi-desktop-token": token };
+    // The internal listener still applies the configured Web password. The
+    // renderer has a session cookie, but this native status probe has no cookie
+    // jar, so authenticate it from the same launch environment without persisting
+    // the secret in desktop settings or renderer code.
+    if (password) headers.authorization = `Basic ${Buffer.from(`pi:${password}`).toString("base64")}`;
+    const request = get(`${origin}${path}`, { headers }, response => {
+      if (response.statusCode !== 200) {
+        response.resume();
+        reject(new Error(`Local service returned HTTP ${response.statusCode}`));
+        return;
+      }
+      const chunks = [];
+      let bytes = 0;
+      response.on("data", data => {
+        bytes += data.length;
+        if (bytes > 1024 * 1024) request.destroy(new Error("Local service response is too large"));
+        else chunks.push(data);
+      });
+      response.once("error", reject);
+      response.once("end", () => {
+        try { resolve(JSON.parse(Buffer.concat(chunks).toString("utf8"))); }
+        catch { reject(new Error("Local service returned invalid JSON")); }
+      });
+    });
+    const deadline = setTimeout(() => request.destroy(new Error("Local service request timed out")), 5000);
+    request.once("close", () => clearTimeout(deadline));
+    request.once("error", reject);
+  });
+}
+
 class DesktopService extends EventEmitter {
-  constructor({ node, root, dev, version, entry = join(__dirname, "../server/index.cjs") }) {
+  constructor({ node, root, dev, version, entry = join(__dirname, "../server/index.cjs"), password = process.env.PI_WEB_PASSWORD }) {
     super();
-    Object.assign(this, { node, root, dev, version, entry });
+    Object.assign(this, { node, root, dev, version, entry, password });
     this.child = null;
     this.origin = "";
     this.token = randomBytes(32).toString("hex");
     this.pending = new Map();
-    this.status = { phase: "stopped", externalUrl: null, error: null, passwordConfigured: Boolean(process.env.PI_WEB_PASSWORD), version, nodeVersion: "" };
+    this.status = { phase: "stopped", externalUrl: null, error: null, passwordConfigured: Boolean(password), version, nodeVersion: "" };
   }
   state(patch) { Object.assign(this.status, patch); this.emit("status", this.status); }
+  async activeWork() {
+    if (!this.origin || this.status.phase !== "running") {
+      return { active: false, runningSessionIds: [], awaitingInputSessionIds: [], backgroundSessionIds: [] };
+    }
+    const data = await readInternalJson(this.origin, this.token, "/api/agent/running", this.password);
+    const ids = value => Array.isArray(value) ? [...new Set(value.filter(item => typeof item === "string" && item))] : [];
+    const runningSessionIds = ids(data?.runningSessionIds);
+    const awaitingInputSessionIds = ids(data?.awaitingInputSessionIds);
+    const backgroundSessionIds = ids(data?.backgroundSessionIds);
+    return {
+      active: new Set([...runningSessionIds, ...awaitingInputSessionIds, ...backgroundSessionIds]).size > 0,
+      runningSessionIds,
+      awaitingInputSessionIds,
+      backgroundSessionIds,
+    };
+  }
   async start() {
     const began = performance.now();
     if (this.child) throw new Error("Service is already started");

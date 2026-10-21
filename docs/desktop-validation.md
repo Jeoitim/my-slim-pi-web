@@ -1,5 +1,24 @@
 # Desktop 交付与验证记录
 
+## 2026-10-21 启动、后台任务与扩展界面增量
+
+本轮新增可见启动页、活动任务关闭确认和 RPC 扩展界面适配，不改变 Agent 数据目录或权限语义。
+
+| 本轮检查 | 结果 |
+| --- | --- |
+| TypeScript / ESLint | 通过 |
+| pi-subagents RPC widget 解析与上限 | 3/3；Fleet 树、异常 payload、Inspector reply |
+| 会话 liveness / 后台任务识别 | 通过；浏览器选择租约不当作后台代理 |
+| 本地扩展命令桥与远程白名单 | 通过；Inspector 只读命令可远程读取，其他扩展命令保持本地 |
+| 桌面任务快照 API | 通过；运行回合、审批等待和后台代理去重 |
+| Web 密码下的桌面任务快照 | 通过；主进程内部查询带 Basic 凭据，不把凭据写入设置或渲染层 |
+| 真实 Electron 启动页交接 | 通过；先显示居中图标与进度条，再自动进入 WebUI |
+| 真实 Electron 关闭/后台/退出 | 通过；阻塞扩展命令运行中关闭窗口提供后台选项，任务保持运行；最终退出后监听端口消失 |
+| Windows PTY 退出 | 修复 node-pty 不接受 POSIX signal 的关闭异常；关闭终端不再抛 uncaughtException |
+| 启动失败页 | 通过；缺失 Node 时仍显示可见、可重试错误页 |
+
+`pi-ask-user` 在 RPC/Web 模式改走 Pi 的 `select`/`input` 对话框，保留 AUTO/ACT 90 秒推荐默认、ASK/PLAN 等待和取消语义；TUI 原生 picker 不变。`pi-subagents` 的 `subagent-async` 与 `subagent-inspect` JSON 被转换为原生 Fleet 列表和检查器，上游管理与插件页面保留。此次未重新打包 NSIS，也未推送或发布。
+
 验证日期：2026-10-21。Windows x64 / PowerShell 7；开发 Node.js 24.20.0，Electron 44.9.1（内含 Node.js 24.22.0），electron-builder 26.15.3。后端运行在随包的独立 Node.js 24.20.0，不依赖 Electron ABI 或系统 Node。
 
 ## 0.12.2-jeoitim.2 右键菜单与剪贴板修复

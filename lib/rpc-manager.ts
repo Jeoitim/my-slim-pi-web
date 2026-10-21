@@ -21,7 +21,7 @@ import {
 import { cacheSessionPath, catalogFirstMessage, getLatestModelChange, invalidateSessionListCache, readLatestSessionEntryId, resolveSessionPath } from "./session-reader";
 import { getProjectTrustStatus, projectTrustReloadOptions } from "./project-trust";
 import { notifySessionComplete } from "./web-push";
-import { hasActiveSessionLivenessProvider } from "./session-liveness";
+import { getActiveSessionLivenessProviders, hasActiveSessionLivenessProvider } from "./session-liveness";
 import type { SlashCommandInfo } from "@earendil-works/pi-coding-agent";
 import type { AgentSessionLike, ExtensionUiContextLike, ToolInfo } from "./pi-types";
 import type {
@@ -644,6 +644,7 @@ export class AgentSessionWrapper {
   private shouldWaitForExtensions(type: string): boolean {
     return type === "open_my_slim_pi_settings"
       || type === "set_permission_mode"
+      || type === "run_extension_command"
       || type === "prompt"
       || type === "steer"
       || type === "follow_up"
@@ -1325,6 +1326,24 @@ export class AgentSessionWrapper {
           if (mode !== command.mode) throw new Error("My Slim Pi did not confirm the requested permission mode");
           return { mode, extensionStatuses: this.getExtensionStatuses() };
         } finally { release(); }
+      }
+
+      case "run_extension_command": {
+        const name = typeof command.name === "string" ? command.name.trim() : "";
+        const args = typeof command.args === "string" ? command.args : "";
+        if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(name)) throw new Error("Invalid extension command name");
+        if (args.length > 8192) throw new Error("Extension command arguments are too long");
+        // This local-only bridge is used by trusted UI affordances such as the
+        // pi-subagents inspector. A direct command that emits a widget is safe
+        // while a turn runs; other commands must not race the active turn.
+        if (this.isRunning() && name !== "subagents-inspect-rpc") {
+          throw new Error("Wait for the current response to finish before running this extension command");
+        }
+        await this.waitForExtensionsBound();
+        const registered = this.inner.extensionRunner.getCommand(name);
+        if (!registered) throw new Error(`Extension command /${name} is unavailable`);
+        await registered.handler(args, this.inner.extensionRunner.createCommandContext());
+        return null;
       }
 
       case "set_tools": {
@@ -2459,6 +2478,26 @@ export function getRunningRpcSessionIds(): string[] {
   const ids = new Set<string>();
   for (const [sessionId, session] of getRegistry()) {
     if (session.isRunning()) ids.add(session.sessionId || sessionId);
+  }
+  return [...ids];
+}
+
+/**
+ * Sessions whose extension owns work that outlives a settled prompt, such as
+ * pi-subagents async jobs. Browser selection leases are deliberately excluded:
+ * an open tab alone is not a running task.
+ */
+export function getBackgroundRpcSessionIds(): string[] {
+  const ids = new Set<string>();
+  for (const [registeredId, session] of getRegistry()) {
+    if (!session.isAlive()) continue;
+    const names = getActiveSessionLivenessProviders({
+      sessionId: session.sessionId || registeredId,
+      sessionFile: session.sessionFile || undefined,
+    });
+    if (names.some((name) => name !== "pi-web-selected-session")) {
+      ids.add(session.sessionId || registeredId);
+    }
   }
   return [...ids];
 }

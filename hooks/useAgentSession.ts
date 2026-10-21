@@ -35,6 +35,11 @@ import { isNestedToolExecutionEvent, isSystemMessageEvent } from "@/lib/agent-ev
 import { getToolExecutionProgress } from "@/lib/tool-execution-progress";
 import { CODEMODE_TOOL_NAME, getCodemodeProgress } from "@/lib/codemode-view";
 import { updateExtensionWidgets } from "@/lib/extension-widgets";
+import {
+  piSubagentFleetFromWidgets,
+  piSubagentInspectFromWidget,
+  type PiSubagentInspectorState,
+} from "@/lib/pi-subagents-view";
 import { bareMcpOpensSettings } from "@/lib/mcp-command";
 import type { SettingsSection } from "@/lib/settings-navigation";
 import { withTranscriptNotices, type TranscriptNotice } from "@/lib/transcript-notices";
@@ -410,6 +415,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [extensionCustomUis, setExtensionCustomUis] = useState<ExtensionUiCustomRequest[]>([]);
   const [extensionStatuses, setExtensionStatuses] = useState<ExtensionStatusItem[]>([]);
   const [extensionWidgets, setExtensionWidgets] = useState<ExtensionWidgetItem[]>([]);
+  const [fleetInspector, setFleetInspector] = useState<PiSubagentInspectorState | null>(null);
   const [queuedMessages, setQueuedMessages] = useState<QueuedMessages>({ steering: [], followUp: [] });
 
   const eventConnectionRef = useRef<AgentEventConnection | null>(null);
@@ -1158,6 +1164,36 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     });
   }, []);
 
+  const openFleetInspector = useCallback(async (runId: string) => {
+    const sid = sessionIdRef.current;
+    if (!sid) return;
+    const requestId = typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID()
+      : `fleet-${Date.now()}-${Math.random().toString(16).slice(2)}`;
+    setFleetInspector({ runId, requestId, pending: true });
+    try {
+      await sendAgentCommand(sid, {
+        type: "run_extension_command",
+        name: "subagents-inspect-rpc",
+        args: JSON.stringify({ requestId, asyncId: runId, lines: 200 }),
+      });
+      // The extension replies through a widget event during the command. If
+      // that event does not arrive, leave the dialog with an actionable error
+      // rather than an endless spinner; a late reply still replaces it.
+      setFleetInspector((current) => current?.requestId === requestId && current.pending
+        ? { ...current, pending: false, error: "任务检查器没有返回数据。" }
+        : current);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setFleetInspector((current) => current?.requestId === requestId
+        ? { ...current, pending: false, error: message }
+        : current);
+      addNotice({ type: "error", message });
+    }
+  }, [addNotice]);
+
+  const closeFleetInspector = useCallback(() => setFleetInspector(null), []);
+
   const handleExtensionUiRequest = useCallback((request: ExtensionUiRequest) => {
     if (isBlockingExtensionUiRequest(request)) onAttentionNeeded?.(request);
 
@@ -1185,6 +1221,23 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         });
         break;
       case "setWidget":
+        {
+          const inspection = piSubagentInspectFromWidget(request.widgetKey, request.widgetLines);
+          if (inspection) {
+            setFleetInspector((current) => {
+              if (current && current.requestId !== inspection.requestId) return current;
+              return current
+                ? { ...current, pending: false, reply: inspection, error: undefined }
+                : {
+                    runId: inspection.asyncId ?? inspection.requestId,
+                    requestId: inspection.requestId,
+                    pending: false,
+                    reply: inspection,
+                  };
+            });
+            break;
+          }
+        }
         setExtensionWidgets((prev) => updateExtensionWidgets(
           prev,
           request.widgetKey,
@@ -2444,6 +2497,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         // of leaving them queued in front of the new wrapper's.
         setExtensionDialogs([]);
         setExtensionCustomUis([]);
+        setFleetInspector(null);
         sessionIdRef.current = activeSessionId;
         if (result?.recreated && sessionPropIdRef.current === activeSessionId) {
           maintainEventsConnected(activeSessionId);
@@ -2776,6 +2830,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const waitingExtensionDialogCount = Math.max(0, extensionDialogs.length - 1);
   const extensionCustomUi = extensionCustomUis[0] ?? null;
   const waitingExtensionCustomUiCount = Math.max(0, extensionCustomUis.length - 1);
+  const piSubagentFleet = useMemo(() => piSubagentFleetFromWidgets(extensionWidgets), [extensionWidgets]);
   const messageKeys = useMemo(
     () => messageRenderKeys(entryIds, messages.length, messageKeyAliases),
     [entryIds, messages.length, messageKeyAliases],
@@ -2788,7 +2843,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     retryInfo, contextUsage, systemPrompt, forkingEntryId,
     isCompacting, compactError, compactResult, currentModel, displayModel, modelSwitching, sessionStats, autoCompactionEnabled,
     slashCommands, slashCommandsLoading, queuedMessages,
-    notices: noticeState.visible, extensionDialog, waitingExtensionDialogCount, extensionCustomUi, waitingExtensionCustomUiCount, extensionStatuses, extensionWidgets, respondToExtensionUi, sendExtensionCustomInput,
+    notices: noticeState.visible, extensionDialog, waitingExtensionDialogCount, extensionCustomUi, waitingExtensionCustomUiCount, extensionStatuses, extensionWidgets,
+    piSubagentFleet, fleetInspector, openFleetInspector, closeFleetInspector,
+    respondToExtensionUi, sendExtensionCustomInput,
     isAutoModelSelection: isNew && newSessionModel === null,
     isAutoThinkingSelection: isNew && newSessionThinkingLevel === null,
     defaultModel: newSessionDefaultModel,

@@ -85,6 +85,11 @@ interface ExtensionRunnerLike {
   }>;
   emit?(event: { type: "session_shutdown"; reason: "quit" }): Promise<unknown>;
   setUIContext?(uiContext?: unknown, mode?: "tui" | "rpc" | "json" | "print"): void;
+  getCommand(name: string): {
+    invocationName: string;
+    handler(args: string, ctx: unknown): Promise<void>;
+  } | undefined;
+  createCommandContext(): unknown;
 }
 
 type DialogOptionsLike = {

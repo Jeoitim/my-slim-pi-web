@@ -43,6 +43,8 @@
     "desktop:pack": "node electron/scripts/pack.mjs",
     "desktop:pack:dir": "node electron/scripts/pack.mjs --dir",
     "test:desktop": "node --experimental-strip-types --test electron/tests/*.test.mjs",
+    "test:desktop:startup-loading": "node electron/scripts/startup-loading-check.mjs",
+    "test:desktop:lifecycle": "node electron/scripts/lifecycle-check.mjs",
     "test:desktop:app": "node electron/scripts/e2e.mjs",
     "test:desktop:packaged": "node electron/scripts/e2e.mjs --packaged",
     "test:desktop:clipboard": "node electron/scripts/clipboard-check.mjs"

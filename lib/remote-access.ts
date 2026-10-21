@@ -44,10 +44,15 @@ const REMOTE_AGENT_COMMANDS = new Set([
   "prompt", "steer", "follow_up", "abort", "abort_compaction", "get_state", "get_tools",
   "get_commands", "get_messages", "get_session_stats", "set_model", "set_thinking_level",
   "set_permission_mode", "extension_ui_response", "extension_ui_input", "compact", "navigate_tree",
+  "run_extension_command",
 ]);
 export function remoteAgentCommandError(command: Record<string, unknown>): string | null {
   if (!REMOTE_AGENT_COMMANDS.has(String(command.type))) return "This command is disabled for remote access";
   if (command.toolNames !== undefined) return "Remote tool overrides are disabled; My Slim Pi owns the loadout";
+  if (command.type === "run_extension_command") {
+    if (command.name !== "subagents-inspect-rpc") return "This extension command requires local access";
+    if (typeof command.args !== "string" || command.args.length > 8192) return "Invalid inspection request";
+  }
   if (["prompt", "steer", "follow_up"].includes(String(command.type))) {
     if (typeof command.message !== "string") return "A message is required";
     const message = command.message.trimStart();

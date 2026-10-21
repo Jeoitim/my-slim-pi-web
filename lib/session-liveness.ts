@@ -19,6 +19,7 @@ interface SessionLivenessRegistry {
   version: typeof SESSION_LIVENESS_PROTOCOL_VERSION;
   register(provider: SessionLivenessProvider): () => void;
   hasActiveProvider(session: SessionIdentity): boolean;
+  activeProviders(session: SessionIdentity): string[];
 }
 
 export interface SessionLivenessLease {
@@ -58,6 +59,27 @@ function validateProvider(provider: SessionLivenessProvider): void {
 function createRegistry(): SessionLivenessRegistry {
   const providers = new Map<symbol, SessionLivenessProvider>();
 
+  const activeProviders = (session: SessionIdentity): string[] => {
+    const identities = new Set([session.sessionId, session.sessionFile].filter((value): value is string => Boolean(value)));
+    const active: string[] = [];
+    for (const provider of providers.values()) {
+      if (!identities.has(provider.sessionId) && (!provider.sessionFile || !identities.has(provider.sessionFile))) {
+        continue;
+      }
+      try {
+        const result = provider.isActive();
+        if (typeof result !== "boolean") {
+          throw new Error("isActive() must return a boolean");
+        }
+        if (result) active.push(provider.name);
+      } catch (error) {
+        console.error(`[pi-web] Session liveness provider '${provider.name}' failed; preserving the session:`, error);
+        active.push(provider.name);
+      }
+    }
+    return active;
+  };
+
   return {
     version: SESSION_LIVENESS_PROTOCOL_VERSION,
     register(provider) {
@@ -71,24 +93,9 @@ function createRegistry(): SessionLivenessRegistry {
         providers.delete(token);
       };
     },
+    activeProviders,
     hasActiveProvider(session) {
-      const identities = new Set([session.sessionId, session.sessionFile].filter((value): value is string => Boolean(value)));
-      for (const provider of providers.values()) {
-        if (!identities.has(provider.sessionId) && (!provider.sessionFile || !identities.has(provider.sessionFile))) {
-          continue;
-        }
-        try {
-          const active = provider.isActive();
-          if (typeof active !== "boolean") {
-            throw new Error("isActive() must return a boolean");
-          }
-          if (active) return true;
-        } catch (error) {
-          console.error(`[pi-web] Session liveness provider '${provider.name}' failed; preserving the session:`, error);
-          return true;
-        }
-      }
-      return false;
+      return activeProviders(session).length > 0;
     },
   };
 }
@@ -98,7 +105,8 @@ function isCompatibleRegistry(value: unknown): value is SessionLivenessRegistry 
   const candidate = value as Partial<SessionLivenessRegistry>;
   return candidate.version === SESSION_LIVENESS_PROTOCOL_VERSION
     && typeof candidate.register === "function"
-    && typeof candidate.hasActiveProvider === "function";
+    && typeof candidate.hasActiveProvider === "function"
+    && typeof candidate.activeProviders === "function";
 }
 
 function getRegistry(): SessionLivenessRegistry {
@@ -196,4 +204,10 @@ export function registerSessionLivenessProvider(provider: SessionLivenessProvide
 
 export function hasActiveSessionLivenessProvider(session: SessionIdentity): boolean {
   return registry.hasActiveProvider(session);
+}
+
+/** Provider names currently keeping a session alive. Browser leases are named
+ * `pi-web-selected-session`; extension-owned work uses its package name. */
+export function getActiveSessionLivenessProviders(session: SessionIdentity): string[] {
+  return registry.activeProviders(session);
 }

@@ -31,6 +31,45 @@ test("a missing Node runtime fails promptly and leaves no owned child", async ()
   assert.equal(service.status.phase, "stopped");
 });
 
+test("desktop task snapshot distinguishes running turns, approvals and background agents", async () => {
+  const server = http.createServer((request, response) => {
+    assert.equal(request.url, "/api/agent/running");
+    assert.equal(request.headers["x-pi-desktop-token"], "test-token");
+    assert.equal(request.headers.authorization, `Basic ${Buffer.from("pi:test-password").toString("base64")}`);
+    response.setHeader("Content-Type", "application/json");
+    response.end(JSON.stringify({
+      runningSessionIds: ["run-1", "run-1", 3],
+      awaitingInputSessionIds: ["approval-1"],
+      backgroundSessionIds: ["background-1", "run-1"],
+    }));
+  });
+  await new Promise(resolve => server.listen(0, "127.0.0.1", resolve));
+  const service = new DesktopService({ node: process.execPath, root: process.cwd(), version: "test", dev: false, password: "test-password" });
+  service.origin = `http://127.0.0.1:${server.address().port}`;
+  service.token = "test-token";
+  service.status.phase = "running";
+  try {
+    assert.deepEqual(await service.activeWork(), {
+      active: true,
+      runningSessionIds: ["run-1"],
+      awaitingInputSessionIds: ["approval-1"],
+      backgroundSessionIds: ["background-1", "run-1"],
+    });
+    server.closeIdleConnections?.();
+    await new Promise(resolve => server.close(resolve));
+    service.origin = "";
+    service.status.phase = "stopped";
+    assert.deepEqual(await service.activeWork(), {
+      active: false,
+      runningSessionIds: [],
+      awaitingInputSessionIds: [],
+      backgroundSessionIds: [],
+    });
+  } finally {
+    if (server.listening) await new Promise(resolve => server.close(resolve));
+  }
+});
+
 test("desktop settings validate strictly, persist separately and preserve corrupt files", async () => {
   const dir = await mkdtemp(join(tmpdir(), "pi desktop 中文 "));
   const file = join(dir, "desktop-settings.json");
