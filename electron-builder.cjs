@@ -7,7 +7,13 @@ module.exports = {
   files: ["electron/main/**", "electron/preload/**", "electron/server/**", "electron/ui/**", "package.json"],
   extraResources: [
     { from: ".desktop/server", to: "server" },
+    // electron-builder's extraResources filter always drops a `node_modules` entry
+    // that sits directly at a mapping's `from` root (src/util/filter.js returns
+    // false for the relative path "node_modules"). Mapping the dependency tree
+    // one level lower keeps it, because its children are then the relative paths.
+    { from: ".desktop/server/node_modules", to: "server/node_modules" },
     { from: ".desktop/runtime", to: "runtime" },
+    { from: ".desktop/runtime/node_modules", to: "runtime/node_modules" },
     { from: "electron/server", to: "desktop-host/electron/server" },
     { from: "electron/main/settings.cjs", to: "desktop-host/electron/main/settings.cjs" },
     { from: ".desktop/icons/icon.png", to: "icon.png" },
