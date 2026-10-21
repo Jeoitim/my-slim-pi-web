@@ -1,214 +1,41 @@
-# Release Checklist
+# My Slim Pi Web 发布流程
 
-This repo publishes two artifacts for each release:
+本 fork 的开发与发布分支是 `my-slim-pi-web`。GitHub Release 分发 Windows x64 NSIS 安装包与 Linux x64 AppImage；不发布上游 `@agegr/pi-web` npm 包。两个桌面包都在对应的原生系统中构建，内含独立 Node.js 24、npm 与 npx，使用同一 Next.js / Pi SDK 后端。
 
-- npm package: `@agegr/pi-web`
-- GitHub Release: `agegr/pi-web`
+## 版本与发布说明
 
-Use this checklist from a clean `main` checkout.
+版本格式为 `<已审查上游版本>-jeoitim.<修订号>`，例如 `0.12.2-jeoitim.3`；tag 在前面加 `v`。同一上游基准下递增修订号；合入新的上游发布后从 `.1` 开始。同步更新 `package.json`、`package-lock.json` 和 `docs/upstream.md`。在 `docs/releases/<版本>.md` 写好面向用户的说明；工作流直接用此文件作为 GitHub Release 正文。
 
-## 1. Preflight
+发布说明应列出可见变化、安装方法、系统架构、已验证范围和已知限制。不要把先前版本的测试结果写成本次已验证结果。
 
-```bash
-git fetch origin
-git status --short --branch
-git log --oneline --decorate -5
-git rev-list --left-right --count main...origin/main
-gh auth status
-npm whoami
-node -e "const p=require('./package.json'); console.log(p.version)"
-lsof -nP -iTCP:30141 -sTCP:LISTEN
-ls .next/server/route-cache
+## 发布前检查
+
+在 `my-slim-pi-web` 上完成代码审查与本地验证，确认工作区只包含本次发布的变更。至少运行：
+
+```sh
+npm ci
+npm run lint
+npm run typecheck
+npm test
+npm run test:permissions
+npm run test:desktop
+node electron/scripts/release-artifacts.mjs verify-tag v<版本>
 ```
 
-Expected:
+在 Windows 本机可额外运行 `npm run desktop:build`、`npm run desktop:pack` 和 `node electron/scripts/release-artifacts.mjs checksum windows` 检查实际安装包。桌面构建使用 `.desktop/`，不会覆盖开发用的 `.next/`。检查 `git ls-remote --tags origin v<版本>`，确保没有同名远程 tag。
 
-- `git status` is clean, or only contains changes you intentionally plan to release.
-- `main` and `origin/main` are aligned (`0	0`).
-- GitHub is authenticated as an account that can push and create releases.
-- npm is authenticated as an account that can publish `@agegr/pi-web`.
-- No dev server is listening on 30141: the production build rewrites `.next/` and breaks a running `npm run dev`. Stop it first.
-- `.next/server/route-cache/` does not exist. An e2e run in `start` mode writes it (`next start` does, the build does not), and it would be published. Delete it if present.
+## 触发发布
 
-Before bumping, confirm the next version is free (replace `<version>`):
+把已验证的发布提交推送到 `origin/my-slim-pi-web`，再只推送本次 tag：
 
-```bash
-npm view @agegr/pi-web@<version> version --registry https://registry.npmjs.org/   # expect E404
-git ls-remote --tags origin v<version>                                            # expect empty
+```sh
+git tag -a v<版本> -m "v<版本>"
+git push origin my-slim-pi-web
+git push origin v<版本>
 ```
 
-## 2. Publish to npm
+不要使用 `git push --tags`。`.github/workflows/desktop-release.yml` 只响应 `v*-jeoitim.*` tag，并在构建前核对 tag 与两个包清单版本、发布说明。校验通过后，Windows 和 Linux runner 分别执行 `npm ci`、隔离桌面构建及打包。只有两个平台的包都成功且下载后的 SHA256 再次匹配，才会创建或更新 GitHub Release。一个平台失败时本次不会发布半套产物。重跑同一 tag 会更新说明和同名附件。
 
-Patch release:
+发布结束后查看 Actions 与 Release 页面，下载 Windows `.exe` 和 Linux `.AppImage` 验证文件名、大小与相邻的 `.sha256`。Windows 用户运行安装包；Linux 用户先给 AppImage 执行权限再运行。AppImage 的实际运行仍需在目标 Linux 桌面环境验证。当前没有代码签名，Windows 可能显示 SmartScreen 提示。
 
-```bash
-npm run release
-```
-
-The release script runs:
-
-```bash
-npm version patch --no-git-tag-version && npm run build && npm publish --access public
-```
-
-`npm run release` only bumps the patch number. For a minor (or major) release, set the version yourself and run the other two steps separately:
-
-```bash
-npm version <x.y.0> --no-git-tag-version
-npm run build
-npm publish --access public
-```
-
-Choosing the bump: look at `git log --oneline v<previous>..HEAD`. A batch of `feat:` commits (new UI, new commands, new settings) is a minor; only fixes and small adjustments is a patch. Decide before running the script, since a published version cannot be reused.
-
-Notes:
-
-- This bumps `package.json` and `package-lock.json`.
-- It intentionally runs a production build. Do not run `next build` during normal development; release work is the exception.
-- A newly published version may take a few minutes to show up. `npm view @agegr/pi-web@<version> version` can return E404 and `npm view @agegr/pi-web version` can show the previous version even though the publish printed `+ @agegr/pi-web@<version>`. This is registry propagation, not a failed publish: do not publish again. Poll the registry until the version appears:
-
-```bash
-curl -s https://registry.npmjs.org/@agegr%2Fpi-web/<version> | head -c 80   # JSON once it exists, "version not found" before
-npm view @agegr/pi-web dist-tags --registry https://registry.npmjs.org/
-npm view @agegr/pi-web versions --json --registry https://registry.npmjs.org/
-```
-
-## 3. Commit the Version Bump
-
-Replace `<version>` with the new package version, for example `0.7.5`.
-
-```bash
-git diff -- package.json package-lock.json
-git add package.json package-lock.json
-git commit -m "Release v<version>"
-```
-
-## 4. Tag and Push
-
-```bash
-git tag -a v<version> -m "v<version>"
-git push origin main v<version>
-```
-
-Push the release tag by name. Do not use `git push --tags`: the local checkout holds tags fetched from contributor forks that are not on origin, and `--tags` publishes them (it leaked a stray `v0.10.5`, on a commit that is on no branch, during the v0.11.0 release). If you ever need `--tags`, compare `git tag` with `git ls-remote --tags origin` first.
-
-Confirm the tag does not already exist before creating it when unsure:
-
-```bash
-git ls-remote --tags origin v<version>
-gh release view v<version> --repo agegr/pi-web
-```
-
-## 5. Generate Release Notes from Commits
-
-Use the previous release tag as the base.
-
-```bash
-git log --oneline --decorate v<previous>..v<version>
-git log --format='%h%x09%s%n%b' v<previous>..v<version>
-git diff --stat v<previous>..v<version>
-```
-
-Write the release notes from those commits, not from memory. Include both Chinese and English sections. Keep commit hashes or PR numbers next to each item when useful.
-
-- Check commands, flags and setting names against `README.md` and the code before writing them down.
-- Thank outside contributors by name: `git log --format='%h %an | %s' v<previous>..v<version>` lists authors, and the previous release's notes show the style.
-- Open with the install/upgrade command (`npm install -g @agegr/pi-web@latest`), as earlier releases did.
-- Write the notes to a file outside the repo (for example `NOTES=$(mktemp)`), or pass them through stdin as shown below. A `release-notes.md` in the repo root is an untracked file in the next release's `git status`.
-
-Suggested structure:
-
-```markdown
-## 中文
-
-基于 `v<previous>..v<version>` 的提交整理。
-
-### 新增
-
-- ...
-
-### 修复
-
-- ...
-
-### 改进
-
-- ...
-
-### 内部调整
-
-- 发布 npm 包 `@agegr/pi-web@<version>`。
-
-## English
-
-Prepared from commits in `v<previous>..v<version>`.
-
-### Added
-
-- ...
-
-### Fixed
-
-- ...
-
-### Improved
-
-- ...
-
-### Internal
-
-- Published npm package `@agegr/pi-web@<version>`.
-```
-
-## 6. Create or Update the GitHub Release
-
-Create a new release:
-
-```bash
-gh release create v<version> \
-  --repo agegr/pi-web \
-  --verify-tag \
-  --title "v<version>" \
-  --notes-file "$NOTES"
-```
-
-If the release already exists and only the notes need updating:
-
-```bash
-gh release edit v<version> \
-  --repo agegr/pi-web \
-  --notes-file "$NOTES"
-```
-
-You can avoid a temporary file by passing notes through stdin:
-
-```bash
-gh release edit v<version> --repo agegr/pi-web --notes-file - <<'EOF'
-## 中文
-
-...
-
-## English
-
-...
-EOF
-```
-
-## 7. Final Verification
-
-```bash
-gh release view v<version> --repo agegr/pi-web
-npm view @agegr/pi-web@<version> version --registry https://registry.npmjs.org/
-npm view @agegr/pi-web dist-tags --registry https://registry.npmjs.org/
-git status --short --branch
-git log --oneline --decorate -3
-git ls-remote --tags origin
-```
-
-Expected:
-
-- GitHub Release exists and is not a draft unless intentionally published as one.
-- npm exact version resolves and `latest` points at it (allow a few minutes, see step 2).
-- `git ls-remote --tags origin` shows no tag you did not mean to publish.
-- `main` is aligned with `origin/main`.
-- `HEAD` points at the release commit and `v<version>` tag.
+若构建失败，修复后创建新的修订号与 tag；不要移动已公开的 tag。发布后的代码回退也使用新修订号，保持已发布的安装包与来源提交可追溯。

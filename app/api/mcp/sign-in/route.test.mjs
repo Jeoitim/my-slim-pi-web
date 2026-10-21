@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync, realpathSync } from "node:fs";
+import { readFileSync, realpathSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -46,7 +46,6 @@ after(async () => {
 const globalPath = join(agentDir, "mcp.json");
 const projectPath = join(cwd, ".pi", "mcp.json");
 const authPath = join(agentDir, "mcp-auth.json");
-const marker = join(root, "command-ran");
 const store = new ProjectTrustStore(agentDir);
 
 beforeEach(async () => {
@@ -54,8 +53,8 @@ beforeEach(async () => {
   clearMcpSignIns();
   clearMcpStatuses();
   fake.issued.access.clear();
+  fake.issued.probes.length = 0;
   await rm(authPath, { force: true });
-  await rm(marker, { force: true });
   await writeFile(globalPath, `${JSON.stringify({
     mcpServers: {
       oauth: { url: fake.url },
@@ -68,7 +67,7 @@ beforeEach(async () => {
     },
   }, null, 2)}\n`);
   await writeFile(projectPath, `${JSON.stringify({
-    mcpServers: { repo: { url: fake.url, headers: { "X-Probe": `!touch ${marker} && echo probe` } } },
+    mcpServers: { repo: { url: fake.url, headers: { "X-Probe": "!echo probe" } } },
   }, null, 2)}\n`);
   store.set(cwd, null);
 });
@@ -230,14 +229,14 @@ test("an untrusted project's server is never contacted; a trusted one's is", asy
   assert.equal((await start({ scope: "project", name: "repo", cwd })).status, 403);
   // A folder outside the allowed roots is refused like any cwd.
   assert.equal((await start({ scope: "project", name: "repo", cwd: join(root, "elsewhere") })).body.reason, "cwd-denied");
-  assert.equal(existsSync(marker), false, "the project's !command header never ran");
+  assert.equal(fake.issued.probes.length, 0, "the project's !command header never reached the server");
 
   store.set(cwd, true);
   const started = await start({ scope: "project", name: "repo", cwd });
   assert.equal(started.status, 200, JSON.stringify(started.body));
   const waiting = await until(started.body.flowId, (flow) => flow.phase === "authorize" || ENDED.has(flow.phase));
   assert.equal(waiting.phase, "authorize", waiting.error);
-  assert.equal(existsSync(marker), true, "trusted, its !command runs as it would in a session");
+  assert.ok(fake.issued.probes.includes("probe"), "trusted, its !command output reaches the server");
   await cancel(started.body.flowId);
 });
 
@@ -254,14 +253,14 @@ for (const [label, revoke] of [
     assert.equal(started.status, 200, JSON.stringify(started.body));
     const waiting = await until(started.body.flowId, (flow) => flow.phase === "authorize" || ENDED.has(flow.phase));
     assert.equal(waiting.phase, "authorize", waiting.error);
-    // The first connect ran the repository's header; only a reconnect would run it again.
-    await rm(marker, { force: true });
+    // The first connect sent the repository's header; only a reconnect would send it again.
+    fake.issued.probes.length = 0;
     revoke();
     assert.equal((await paste(started.body.flowId, { redirectUrl: await approveSignIn(waiting.authorizationUrl) })).status, 200);
     const done = await until(started.body.flowId, (flow) => ENDED.has(flow.phase));
     assert.equal(done.phase, "done", done.error);
     assert.equal(done.result, undefined, "no reconnect result");
-    assert.equal(existsSync(marker), false, "the project's !command header did not run again");
+    assert.equal(fake.issued.probes.length, 0, "the project's !command header was not sent again");
   });
 }
 

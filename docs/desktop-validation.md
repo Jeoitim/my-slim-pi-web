@@ -1,5 +1,11 @@
 # Desktop 交付与验证记录
 
+## 0.12.2-jeoitim.3 发布候选（2026-10-21）
+
+本地 Windows x64 NSIS 产物为 `dist-desktop/My Slim Pi Web Setup 0.12.2-jeoitim.3.exe`，141,533,426 字节；SHA256：`c3052c6fab92341a379e14bbf85d60cf6925d68381d94789b3fd1b9f58df9327`，同目录生成相邻 `.sha256` 文件。
+
+本次通过 TypeScript、ESLint、桌面单元测试 9/9、权限/远程测试 8 项（1 项按原有条件跳过）、MCP 登录路由测试 10/10、隔离桌面资源构建、随包 Node.js 24.20.0 / node-pty 运行时验证、NSIS 打包及打包目录应用回归。打包目录回归检查了认证、桌面窗口、文件预览、终端和退出后监听器清理；返回 `passed: true`。Windows 全量单元测试曾因 MCP 路由测试使用 Unix `touch` 命令失败，已换成跨平台的服务端请求头验证；另外两个 MCP 集成测试在 Windows 临时目录清理时遇到 `EBUSY`，故不把 Windows 全量套件记作通过。发布工作流在 Ubuntu 运行全量测试，再在 Windows/Linux 原生 runner 分别打包。Linux AppImage 和实际 NSIS 安装后的本版本应用尚待 Actions/目标环境验收。
+
 ## 2026-10-21 启动、后台任务与扩展界面增量
 
 本轮新增可见启动页、活动任务关闭确认和 RPC 扩展界面适配，不改变 Agent 数据目录或权限语义。

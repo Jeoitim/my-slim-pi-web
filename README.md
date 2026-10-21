@@ -2,7 +2,7 @@
 
 **My Slim Pi 的 WebUI 最简实现。** 基于 [agegr/pi-web](https://github.com/agegr/pi-web)，为现有 My Slim Pi 提供浏览器聊天、会话和审批入口。Agent 的工具、扩展、记忆与权限规则均沿用 My Slim Pi。
 
-需要 Node.js **24+**，以及已安装、构建完成的 [My Slim Pi](https://github.com/Jeoitim/my-slim-pi)（Pi **1.3.0**）。Windows 使用 PowerShell 7，Linux 使用原生 Bash / Node；两端各自安装依赖。
+从源码运行需要 Node.js **24+**，以及已安装、构建完成的 [My Slim Pi](https://github.com/Jeoitim/my-slim-pi)（Pi **1.3.0**）。Windows 使用 PowerShell 7，Linux 使用原生 Bash / Node；两端各自安装依赖。桌面安装包自带 Node.js 24。
 
 ## 启动
 
@@ -31,13 +31,15 @@ export PI_CODING_AGENT_DIR="/path/to/agent"
 
 桌面与 Web 共用现有界面、权限系统和 Agent 数据。窗口按钮内嵌于应用顶部并跟随主题；“设置 → 桌面应用”管理受认证保护的本地 Web 入口、端口和后台服务。
 
+预编译的 Windows x64 安装包和 Linux x64 AppImage 见 [GitHub Releases](https://github.com/Jeoitim/my-slim-pi-web/releases)。下载说明与校验范围见[当前版本说明](docs/releases/0.12.2-jeoitim.3.md)；从源码构建如下：
+
 ```sh
 npm run desktop:dev
 npm run desktop:build
 npm run desktop:pack
 ```
 
-Windows x64 生成 NSIS 安装包，随包包含独立 Node.js 24 和 npm/npx。桌面构建隔离在 `.desktop/`；浏览器仍使用原命令。详情见 [桌面文档](docs/desktop.md)。
+Windows x64 生成 NSIS 安装包，Linux x64 生成 AppImage；两者随包包含独立 Node.js 24 和 npm/npx。桌面构建隔离在 `.desktop/`；浏览器仍使用原命令。详情见 [桌面文档](docs/desktop.md)。
 
 ## 本项目设置
 
@@ -54,4 +56,4 @@ Windows x64 生成 NSIS 安装包，随包包含独立 Node.js 24 和 npm/npx。
 
 [权限与配置](docs/permissions.md) · [两端验证及已知缺口](docs/compatibility.md) · [上游同步与回退](docs/upstream.md)
 
-更多通用功能介绍请阅读 [上游项目 README](https://github.com/agegr/pi-web#readme)。保留上游 Git 历史和 MIT 许可证，基于 `7c0778a`（0.12.2），Pi SDK 固定为 **1.3.0**。本项目不自动推送、发布或修改用户 PATH。
+更多通用功能介绍请阅读 [上游项目 README](https://github.com/agegr/pi-web#readme)。保留上游 Git 历史和 MIT 许可证，基于 `7c0778a`（0.12.2），Pi SDK 固定为 **1.3.0**。仅在维护者推送版本 tag 后由工作流发布；应用不修改用户 PATH。

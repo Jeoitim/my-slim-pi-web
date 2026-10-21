@@ -5,7 +5,7 @@ name: Demo
 
 on:
   push:
-    branches: [main]
+    branches: [my-slim-pi-web]
   pull_request:
     paths:
       - "demo/**"
