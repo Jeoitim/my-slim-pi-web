@@ -1,11 +1,10 @@
 name: Demo
 
 # Builds the static Pi Web demo in demo/ and publishes it to GitHub Pages.
-# Pull requests that touch the demo only build it.
+# Pull requests that touch the demo only build it. Manual deployment requires
+# GitHub Pages to be enabled for this fork first.
 
 on:
-  push:
-    branches: [my-slim-pi-web]
   pull_request:
     paths:
       - "demo/**"
