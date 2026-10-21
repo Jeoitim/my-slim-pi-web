@@ -1015,9 +1015,8 @@ a.session-tree-main {
    in the chevron column (6px in plus a header toggle's 5px). A click shows
    the versions in the accent for a few seconds. Never cut: New's label
    gives way first, and on a row too narrow for the versions they take the
-   sidebar's meta size (data-fit 2): the icon fits
-   beside the two cells at the sidebar's 180px minimum, and at 11px so do
-   the versions with a digit to spare. */
+   sidebar's meta size (data-fit 2): the icon fits beside the two cells at
+   the sidebar's 180px minimum, and longer fork versions wrap into two lines. */
 .sidebar-brand {
   display: inline-flex;
   flex: none;
@@ -1102,6 +1101,13 @@ a.session-tree-main {
 
 .sidebar-header[data-fit="2"] .sidebar-brand {
   font-size: 11px;
+}
+
+.sidebar-header[data-fit="2"] .sidebar-brand.is-version {
+  max-width: 100px;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  line-height: 1;
 }
 
 .sidebar-header[data-fit="1"] .sidebar-new-label,

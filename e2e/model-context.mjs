@@ -33,6 +33,9 @@ export async function checkModelContext(page) {
     const sidebar = page.getByRole("button", { name: "Show sidebar", exact: true });
     if (await sidebar.isVisible()) await sidebar.click();
     await page.getByRole("button", { name: "Settings", exact: true }).click();
+    // Settings is loaded on demand in a fresh mobile context. Wait for its
+    // dialog before choosing between the desktop tabs and mobile picker.
+    await settings.waitFor({ state: "visible" });
     const section = settings.getByRole("combobox", { name: "Settings", exact: true });
     if (await section.isVisible()) await section.selectOption("models");
     else await settings.getByRole("button", { name: "Models", exact: true }).click();

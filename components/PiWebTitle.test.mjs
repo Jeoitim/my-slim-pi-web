@@ -97,8 +97,10 @@ test("the brand's icon and versions fit at the sidebar's minimum", async () => {
   const box = (text, fontSize) => marginLeft + 2 * paddingLeft + text.length * 0.6 * fontSize;
   assert.ok(marginLeft + 2 * paddingLeft + 24 <= room, "the Pi mark fits");
   const piPackage = JSON.parse(await readFile(new URL("../node_modules/@earendil-works/pi-coding-agent/package.json", import.meta.url), "utf8"));
-  // Today's versions, with room for a longer one.
+  // Longer fork versions wrap into two lines without losing a character.
   const versions = brandVersionText(packageJson.version, piPackage.version);
-  assert.ok(box(versions, 11) <= room, `${versions} at 11px`);
-  assert.ok(box(`${versions}0`, 11) <= room, "and a digit more");
+  assert.match(css, /\.sidebar-header\[data-fit="2"\] \.sidebar-brand\.is-version \{[^}]*max-width: 100px;[^}]*white-space: normal;[^}]*overflow-wrap: anywhere;[^}]*line-height: 1;/);
+  const wrapped = (text) => box("x".repeat(Math.ceil(text.length / 2)), 11);
+  assert.ok(wrapped(versions) <= Math.min(room, 100), `${versions} at 11px in two lines`);
+  assert.ok(wrapped(`${versions}0`) <= Math.min(room, 100), "and a digit more");
 });
