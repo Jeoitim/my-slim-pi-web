@@ -32,6 +32,8 @@ jobs:
 
   desktop:
     needs: verify
+    # Windows is required; Linux is published when its native AppImage build succeeds.
+    continue-on-error: ${{ matrix.platform == 'linux' }}
     strategy:
       fail-fast: false
       matrix:

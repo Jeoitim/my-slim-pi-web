@@ -45,6 +45,10 @@ if (operation === "verify-tag") {
 } else if (operation === "verify-download") {
   if (!argument) fail("verify-download expects an asset directory");
   for (const extension of [".exe", ".AppImage"]) {
+    if (extension === ".AppImage" && !(await readdir(argument)).some(name => name.endsWith(extension))) {
+      console.log("No Linux AppImage was built; publishing the Windows installer only");
+      continue;
+    }
     const name = await assets(argument, extension);
     const checksum = await readFile(join(argument, `${name}.sha256`), "utf8");
     const expected = `${await digest(join(argument, name))}  ${basename(name)}\n`;
