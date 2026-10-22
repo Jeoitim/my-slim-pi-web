@@ -1,6 +1,6 @@
 {
   "name": "my-slim-pi-web",
-  "version": "0.12.2-jeoitim.3",
+  "version": "0.12.2-jeoitim.4",
   "description": "My Slim Pi 的 WebUI 最简实现",
   "license": "MIT",
   "engines": {
@@ -50,13 +50,13 @@
     "test:desktop:clipboard": "node electron/scripts/clipboard-check.mjs"
   },
   "dependencies": {
-    "@earendil-works/pi-agent-core": "1.3.0",
-    "@earendil-works/pi-ai": "1.3.0",
-    "@earendil-works/pi-codemode": "1.3.0",
-    "@earendil-works/pi-coding-agent": "1.3.0",
-    "@earendil-works/pi-mcp": "1.3.0",
-    "@earendil-works/pi-telemetry": "1.3.0",
-    "@earendil-works/pi-tui": "1.3.0",
+    "@earendil-works/pi-agent-core": "1.4.0",
+    "@earendil-works/pi-ai": "1.4.0",
+    "@earendil-works/pi-codemode": "1.4.0",
+    "@earendil-works/pi-coding-agent": "1.4.0",
+    "@earendil-works/pi-mcp": "1.4.0",
+    "@earendil-works/pi-telemetry": "1.4.0",
+    "@earendil-works/pi-tui": "1.4.0",
     "@xterm/addon-fit": "0.11.0",
     "@xterm/xterm": "6.0.0",
     "js-yaml": "^5.2.3",

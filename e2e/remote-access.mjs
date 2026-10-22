@@ -35,6 +35,11 @@ assert.equal((await post("/api/agent/new",{cwd,type:"ensure_session",toolNames:[
 const created=await post("/api/agent/new",{cwd,type:"ensure_session"});assert.equal(created.status,200);
 const {sessionId}=await created.json();assert.ok(sessionId);
 const path="/api/agent/"+encodeURIComponent(sessionId);
+const lease=await request(path+"/lease?holder=remote-smoke",{method:"POST"});
+assert.equal(lease.status,200);
+assert.deepEqual(await lease.json(),{success:true,running:false,awaitingInput:false,subagentsActive:false});
+assert.equal((await request(path+"/lease",{method:"POST"})).status,400);
+assert.equal((await request(path+"/lease?holder=remote-smoke",{method:"POST",headers:{authorization:""}})).status,401);
 assert.equal((await post(path,{type:"bash",command:"echo MUST_NOT_RUN"})).status,403);
 assert.equal((await post(path,{type:"set_permission_mode",mode:"ask"})).status,200);
 const state=await (await request(path)).json();assert.equal(state.state.extensionStatuses.find(s=>s.key==="timrt-permission-mode").text,"ask");

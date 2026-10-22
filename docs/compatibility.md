@@ -1,5 +1,34 @@
 # 兼容性与验证记录
 
+## 2026-10-22：Pi 1.4.0 例行维护
+
+版本 `0.12.2-jeoitim.4`，上游基准从 `7c0778a` 更新到 `e533d9b`（仍为 pi-web 0.12.2）。七个 `@earendil-works/*` 包全部精确固定为 1.4.0，锁文件无嵌套 SDK 副本。My Slim Pi 源码参考提交为 `9457b93`，真实集成加载该仓库的隔离 Pi 1.4.0 资源。SDK 与第三方 node_modules 未修改。
+
+本次额外适配：允许经过既有认证、Host/Origin 校验的 POST 会话续租；续租回报 My Slim Pi 扩展持有的后台活动，排除浏览器自身租约；集成测试使用新版原生 `web_search` 工具；修正新引入测试的 Windows 文件 URL，以及两份既有测试对 LF 换行的假设。MCP 后台连接失败测试改为等待两个连接到达终态，再断言错误与脱敏结果，未放宽生产连接或权限策略。
+
+| 本次检查 | 结果 |
+| --- | --- |
+| Windows Node 24.20.0 类型 / ESLint | 通过 |
+| WSL archlinux、原生 Node 24.22.0、独立 npm ci 与全量 Web 测试 | 2891 项：2889 通过、2 跳过、0 失败 |
+| Windows 真实 Pi 1.4.0 资源与权限集成 | 9/9，通过四模式、恢复、隔离、ASK 允许/拒绝/取消与原生 PowerShell |
+| Linux 真实 Pi 1.4.0 资源与权限集成 | 9/9，使用 Linux 原生扩展与 Bash |
+| Windows 桌面单元/服务测试 | 9/9 |
+| 新增隐藏页面事件流回归 | 13/13 |
+| Windows 源码换行回归 | 5/5 |
+| Windows 最终受影响回归合并运行 | 77/77 |
+| Windows 隔离 desktop:build | 通过；随包 Node 24.20.0 和原生 PTY 验证通过 |
+| Windows 打包目录应用回归 | 通过；登录、单实例、外部控制、文件预览、原生终端及退出后的监听清理 |
+| 桌面生产后端的远程 HTTP/SSE 验证 | 通过；含续租 200、缺少 holder 400、未认证 401、Cookie、Host、CSRF、危险 API 拒绝、权限切换与 SSE 重连 |
+| 发布 tag / package / lockfile / release notes 一致性 | v0.12.2-jeoitim.4，通过 |
+
+Linux 首轮全量仅有两项源码换行失败；修正后第二轮出现一次 MCP 子进程尚未报告失败的时序断言，相关文件单独重跑 11/11 通过；显式等待连接终态后的最终全量结果为上表。测试使用测试 provider，无付费模型调用；本次没有重跑真实联网搜索。
+
+Windows 首轮完整套件为 2838 项：2769 通过、47 失败、1 取消、21 跳过。其中包含后来修复的文件 URL/换行问题，以及 Windows ESM、POSIX 路径、文件链接/只读语义、MCP 和 PTY 失败；两个挂起的 MCP 测试子进程被定向终止，故该轮不是完整自然结束的全绿运行。本次未重新对每个 Windows 失败做未修改上游对照，不将其全部宣称为已证明无关。最终受影响检查与真实扩展/生产后端验证另列于上表。
+
+构建使用 `.desktop/`，未运行覆盖开发 `.next/` 的生产构建。Windows 与 Linux 使用各自依赖和隔离 AgentRoot，没有修改用户实际 Agent 安装、凭据或 PATH。公网 Cloudflare Tunnel/Access、Linux 图形桌面及 macOS 仍需目标环境验收。
+
+以下为 2026-10-20 的历史记录，不代表本次重测结果。
+
 验证日期：2026-10-20。Web 基于 agegr/pi-web `7c0778a`（0.12.2），所有直接依赖的 `@earendil-works/*` 包统一精确固定为 **1.3.0**，提交独立 package-lock。未修改 SDK 或第三方 node_modules。
 
 ## 验证环境与隔离

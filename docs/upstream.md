@@ -1,10 +1,10 @@
 # 上游同步与回退
 
-本地默认开发分支为 `my-slim-pi-web`，本地 `upstream` 分支专门跟踪 `upstream/main`。原本地 `main` 已更名，避免误作最新产品线。GitHub 远程默认分支仍保持原状，未经授权不推送或修改。
+本地与 GitHub 默认开发分支均为 `my-slim-pi-web`（2026-10-22 核对），本地 `upstream` 分支专门跟踪 `upstream/main`。原本地 `main` 已更名，避免误作最新产品线。
 
-基底为 `https://github.com/agegr/pi-web.git` 默认分支 main，基准提交 `7c0778a`，上游版本 0.12.2。保留完整 Git 历史、MIT LICENSE及原 CONTRIBUTING / AGENTS；通用介绍直接链接上游 README。`origin` 指向本项目公开仓库 [Jeoitim/my-slim-pi-web](https://github.com/Jeoitim/my-slim-pi-web)，`upstream` 保留原上游地址。
+基底为 `https://github.com/agegr/pi-web.git` 默认分支 main，基准提交 `e533d9b`，上游版本 0.12.2。2026-10-22 审查并集成 `7c0778a..e533d9b` 的六项修复：隐藏页面释放空闲事件流、worktree 短暂失败不入缓存、删除供应商时清除重命名记录、实时活跃时间、保留 models.json 符号链接和 macOS 新会话快捷键。保留完整 Git 历史、MIT LICENSE及原 CONTRIBUTING / AGENTS；通用介绍直接链接上游 README。`origin` 指向本项目公开仓库 [Jeoitim/my-slim-pi-web](https://github.com/Jeoitim/my-slim-pi-web)，`upstream` 保留原上游地址。
 
-本 fork 当前版本 `0.12.2-jeoitim.3`。每个上游基准下递增 `jeoitim` 修订号；集成更新上游后从新基准的 `.1` 开始。package.json / package-lock.json 同步修改。fork 不自动查询或推荐上游 npm / GitHub 应用更新，升级由本仓库维护和分发流程完成。
+本 fork 当前版本 `0.12.2-jeoitim.4`。同一上游发布版本下递增 `jeoitim` 修订号；集成新的上游发布版本后从 `.1` 开始，本次上游仍为 0.12.2，故不重置修订号。package.json / package-lock.json 同步修改。fork 不自动查询或推荐上游 npm / GitHub 应用更新，升级由本仓库维护和分发流程完成。
 
 ## 同步
 
@@ -24,7 +24,7 @@
 - rpc-manager：受管理安装的工具/子代理所有权、模式命令、审批响应严格校验和启动就绪。
 - remote-access/proxy/API 路由：远程认证与高风险入口限制。
 - SettingsPanel/MySlimPiSettings 与设置 API：现有 Agent 偏好编辑、后台模型入口和无效设置清理。
-- 名称、三语言短文本、Node 24、统一 Pi 1.3.0、测试及本文档。
+- 名称、三语言短文本、Node 24、统一 Pi 1.4.0、测试及本文档。
 
 不修改宿主 SDK 或第三方 node_modules。My Slim Pi 的配套源码改动与分发哈希独立保存在 Agent 仓库，继续使用原备份/维护机制。
 

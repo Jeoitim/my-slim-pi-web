@@ -33,6 +33,7 @@ export function isRemoteApiAllowed(pathname: string, method: string): boolean {
   }
   if (method === "POST") {
     return /^\/api\/agent\/(?:new|[^/]+)$/.test(pathname)
+      || /^\/api\/agent\/[^/]+\/lease$/.test(pathname)
       || pathname === "/api/sessions/ui-state"
       || pathname === "/api/sessions/stats"
       || pathname === "/api/cwd/validate";
