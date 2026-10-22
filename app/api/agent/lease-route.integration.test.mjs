@@ -29,7 +29,7 @@ test("a lease keeps the session alive and reports what is under way, without sta
   await writeFile(join(dir, "settings.json"), "{}");
 
   const { getRpcSession, startRpcSession } = await jiti.import("../../../lib/rpc-manager.ts");
-  const { hasActiveSessionLivenessProvider } = await jiti.import("../../../lib/session-liveness.ts");
+  const { hasActiveSessionLivenessProvider, registerSessionLivenessProvider } = await jiti.import("../../../lib/session-liveness.ts");
   const { POST } = await jiti.import("./[id]/lease/route.ts");
   const started = await startRpcSession("__new__agent-lease", "", cwd, {});
   session = started.session;
@@ -52,6 +52,12 @@ test("a lease keeps the session alive and reports what is under way, without sta
   assert.equal(idle.status, 200);
   assert.deepEqual(idle.body, { success: true, running: false, awaitingInput: false, subagentsActive: false });
   assert.equal(hasActiveSessionLivenessProvider({ sessionId: id }), true, "the idle wrapper is kept from being reaped");
+
+  const release = registerSessionLivenessProvider({ name: "pi-subagents", sessionId: id, isActive: () => true });
+  t.after(release);
+  assert.equal((await lease(id, "page-1")).body.subagentsActive, true, "extension-owned tasks keep the hidden page's stream");
+  release();
+  assert.equal((await lease(id, "page-1")).body.subagentsActive, false, "a browser lease alone is idle");
 
   const unknown = "00000000-0000-4000-8000-000000000000";
   const missing = await lease(unknown, "page-1");

@@ -1,6 +1,7 @@
 # File access, worktrees and web auth
 
 ## Desktop ingress
+- Remote access allows POST `/api/agent/[id]/lease` for selected-page liveness and activity polling. Holder validation and the existing authentication/Host/Origin checks still apply; other nested Agent write routes remain denied.
 - Desktop's private listener requires a random per-launch credential. Public listener requests get a signed external marker, always retaining Web password, Host/Origin and remote API rules even for loopback browser clients. `remote-access.ts` verifies with the public key; only the listener holds the private key. Standalone Web has no key and keeps its original behavior. Do not trust a renderer-supplied marker or make desktop settings available through Web APIs.
 
 ## Worktrees and project grouping

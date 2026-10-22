@@ -12,7 +12,7 @@ import { createJiti } from "jiti";
 // reopens it and shows what the server has under way.
 const shimPath = fileURLToPath(new URL("./__fixtures__/react-hook-shim.mjs", import.meta.url));
 const jiti = createJiti(import.meta.url, { tsconfigPaths: true, alias: { react: shimPath } });
-const { renderHook } = await import(shimPath);
+const { renderHook } = await import(new URL("./__fixtures__/react-hook-shim.mjs", import.meta.url).href);
 const { useAgentSession } = await jiti.import("./useAgentSession.ts");
 const { HIDDEN_PAGE_GRACE_MS } = await jiti.import("./usePageHidden.ts");
 // useAgentSession's SESSION_LEASE_RENEW_INTERVAL_MS.

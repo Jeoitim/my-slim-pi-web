@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getRpcSession } from "@/lib/rpc-manager";
-import { holdSessionLivenessLease } from "@/lib/session-liveness";
+import { getActiveSessionLivenessProviders, holdSessionLivenessLease } from "@/lib/session-liveness";
 import { hasUnsettledSubagentRun } from "@/lib/subagent-runtime";
 
 const HOLDER_PATTERN = /^[A-Za-z0-9_-]{1,64}$/;
@@ -29,6 +29,8 @@ export async function POST(
     // An extension dialog waiting for an answer.
     awaitingInput: alive && session!.isAwaitingInput(),
     // A subagent under this session, at any depth, whose end starts a turn here.
-    subagentsActive: hasUnsettledSubagentRun(id),
+    subagentsActive: hasUnsettledSubagentRun(id)
+      || getActiveSessionLivenessProviders({ sessionId: id, sessionFile: session?.sessionFile })
+        .some(name => name !== "pi-web-selected-session"),
   }, { headers: { "Cache-Control": "no-store" } });
 }

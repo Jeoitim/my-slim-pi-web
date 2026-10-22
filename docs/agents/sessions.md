@@ -1,5 +1,8 @@
 # Sessions, branching and live events
 
+## Pi 1.4 maintenance
+The selected-session lease reports extension liveness providers (except `pi-web-selected-session`) as background activity as well as the built-in subagent harness. My Slim Pi owns its subagents, so checking only the Web harness can release its event stream before a background result arrives. The audited remote POST lease route renews a page lease and reads activity; it never starts an AgentSession or runs commands.
+
 ## Desktop shell
 - `DesktopShell` wraps the same AppShell with a themed 36px drag area and native caption overlays. Reserve native button safe areas and opt interactive elements out of dragging. AppShell subtracts `--desktop-titlebar-height` only with preload present. Never create a second session registry for external control; desktop listeners/signing live in `electron/`.
 - Optional file, terminal, subagent and settings panels use dynamic imports in AppShell; keep their existing props, tabs and Agent ownership. The empty-composer update link checks the stable upstream channel only for upstream stable versions. `-jeoitim.N` fork builds skip the browser request and the API route also refuses to contact upstream.
