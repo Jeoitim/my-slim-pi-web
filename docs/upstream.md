@@ -1,6 +1,6 @@
 # 上游同步与回退
 
-本地默认开发分支为 `my-slim-pi-web`，本地 `upstream` 分支专门跟踪 `upstream/main`。原本地 `main` 已更名，避免误作最新产品线。GitHub 远程默认分支仍保持原状，未经授权不推送或修改。
+本地与 GitHub 默认开发分支均为 `my-slim-pi-web`（2026-10-22 核对），本地 `upstream` 分支专门跟踪 `upstream/main`。原本地 `main` 已更名，避免误作最新产品线。
 
 基底为 `https://github.com/agegr/pi-web.git` 默认分支 main，基准提交 `e533d9b`，上游版本 0.12.2。2026-10-22 审查并集成 `7c0778a..e533d9b` 的六项修复：隐藏页面释放空闲事件流、worktree 短暂失败不入缓存、删除供应商时清除重命名记录、实时活跃时间、保留 models.json 符号链接和 macOS 新会话快捷键。保留完整 Git 历史、MIT LICENSE及原 CONTRIBUTING / AGENTS；通用介绍直接链接上游 README。`origin` 指向本项目公开仓库 [Jeoitim/my-slim-pi-web](https://github.com/Jeoitim/my-slim-pi-web)，`upstream` 保留原上游地址。
 

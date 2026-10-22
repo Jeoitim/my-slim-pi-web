@@ -15,7 +15,9 @@
 | Windows 桌面单元/服务测试 | 9/9 |
 | 新增隐藏页面事件流回归 | 13/13 |
 | Windows 源码换行回归 | 5/5 |
+| Windows 最终受影响回归合并运行 | 77/77 |
 | Windows 隔离 desktop:build | 通过；随包 Node 24.20.0 和原生 PTY 验证通过 |
+| Windows 打包目录应用回归 | 通过；登录、单实例、外部控制、文件预览、原生终端及退出后的监听清理 |
 | 桌面生产后端的远程 HTTP/SSE 验证 | 通过；含续租 200、缺少 holder 400、未认证 401、Cookie、Host、CSRF、危险 API 拒绝、权限切换与 SSE 重连 |
 | 发布 tag / package / lockfile / release notes 一致性 | v0.12.2-jeoitim.4，通过 |
 
