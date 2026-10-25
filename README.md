@@ -31,7 +31,7 @@ export PI_CODING_AGENT_DIR="/path/to/agent"
 
 桌面与 Web 共用现有界面、权限系统和 Agent 数据。窗口按钮内嵌于应用顶部并跟随主题；“设置 → 桌面应用”管理受认证保护的本地 Web 入口、端口和后台服务。
 
-预编译的 Windows x64 安装包见 [GitHub Releases](https://github.com/Jeoitim/my-slim-pi-web/releases)；Linux x64 AppImage 在原生构建成功时一同提供。下载说明与校验范围见[当前版本说明](docs/releases/0.12.2-jeoitim.4.md)；从源码构建如下：
+预编译的 Windows x64 安装包见 [GitHub Releases](https://github.com/Jeoitim/my-slim-pi-web/releases)；Linux x64 AppImage 在原生构建成功时一同提供。下载说明与校验范围见[当前版本说明](docs/releases/0.12.2-jeoitim.6.md)；从源码构建如下：
 
 ```sh
 npm run desktop:dev
