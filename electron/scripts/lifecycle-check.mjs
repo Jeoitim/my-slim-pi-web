@@ -14,9 +14,10 @@ await Promise.all([
   mkdir(work),
   mkdir(userData),
 ]);
-await writeFile(join(agent, "settings.json"), JSON.stringify({ extensions: ["./extensions/hold.mjs"] }, null, 2));
-await writeFile(join(agent, "extensions/hold.mjs"), `
-export default function (pi) {
+await writeFile(join(agent, "settings.json"), JSON.stringify({ extensions: ["./extensions/hold.ts"] }, null, 2));
+await writeFile(join(agent, "extensions/hold.ts"), `
+import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+export default function (pi: ExtensionAPI) {
   pi.registerCommand("hold", {
     description: "Test-only blocking dialog",
     handler: async (_args, ctx) => {
@@ -36,8 +37,8 @@ delete environment.ELECTRON_RUN_AS_NODE;
 delete environment.PI_WEB_PASSWORD;
 
 const app = await electron.launch({
-  executablePath: require("electron"),
-  args: [resolve("electron/main/index.cjs"), "--desktop-dev"],
+  executablePath: process.env.PI_DESKTOP_E2E_EXECUTABLE || require("electron"),
+  args: process.env.PI_DESKTOP_E2E_EXECUTABLE ? [] : [resolve("electron/main/index.cjs"), "--desktop-dev"],
   env: environment,
   timeout: 120_000,
 });

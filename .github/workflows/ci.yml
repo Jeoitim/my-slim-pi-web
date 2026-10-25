@@ -28,6 +28,7 @@ jobs:
       - run: npm run lint
       - run: npx tsc --noEmit
       - run: npm test
+      - run: npm run test:desktop
 
   e2e:
     if: github.event_name != 'workflow_dispatch'

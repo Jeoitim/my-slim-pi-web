@@ -19,8 +19,8 @@ delete environment.ELECTRON_RUN_AS_NODE;
 delete environment.PI_WEB_PASSWORD;
 
 const app = await electron.launch({
-  executablePath: require("electron"),
-  args: [resolve("electron/main/index.cjs"), "--desktop-dev"],
+  executablePath: process.env.PI_DESKTOP_E2E_EXECUTABLE || require("electron"),
+  args: process.env.PI_DESKTOP_E2E_EXECUTABLE ? [] : [resolve("electron/main/index.cjs"), "--desktop-dev"],
   env: environment,
   timeout: 120_000,
 });

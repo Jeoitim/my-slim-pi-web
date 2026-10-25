@@ -1,13 +1,18 @@
+const entryBegan = require("node:perf_hooks").performance.now();
 const { join } = require("node:path");
 const { readFileSync } = require("node:fs");
 const { generateKeyPairSync } = require("node:crypto");
 const { createRequire } = require("node:module");
+const { performance } = require("node:perf_hooks");
+const { enableDesktopCompileCache } = require("./compile-cache.cjs");
+const { startResolutionIndex } = require("./resolution-index.cjs");
 const { createListeners } = require("./listeners.cjs");
 const { validatePatch } = require("../main/settings.cjs");
 
 if (Number(process.versions.node.split(".")[0]) < 24) throw new Error("Desktop backend requires Node.js 24+");
 let listeners, nextApp, stopping = false;
 let queue = Promise.resolve();
+let resolutionIndex;
 const send = message => { if (process.connected) process.send(message); };
 async function stop() {
   if (stopping) return;
@@ -17,6 +22,7 @@ async function stop() {
   // Existing SDK signal handlers also dispose PTYs and AgentSession wrappers.
   await listeners?.stop();
   await nextApp?.close();
+  resolutionIndex?.save();
   process.exit(0);
 }
 process.once("disconnect", () => { void stop(); });
@@ -31,6 +37,14 @@ process.on("message", message => {
   queue = queue.then(async () => {
     if (message?.type === "start" && !listeners) {
       const { root, dev, token } = message;
+      const began = performance.now();
+      const startup = {};
+      resolutionIndex = startResolutionIndex(root, { dev, record: message.recordResolutions === true });
+      // Reading thousands of bytecode-cache files defeats the single-source-pack
+      // cold path. Keep compile caching for recording and the normal-file fallback.
+      startup.compileCache = resolutionIndex.stats().sources.state === "active"
+        ? "disabled" : enableDesktopCompileCache(root, dev);
+      startup.startupAssetsMs = Math.round(performance.now() - began);
       process.chdir(root);
       process.env.NODE_ENV = dev ? "development" : "production";
       process.env.PI_DESKTOP_BUILD = "1";
@@ -45,12 +59,20 @@ process.on("message", message => {
       // for next.config.ts/.env and can compile source config on an installed launch.
       if (conf) process.env.__NEXT_PRIVATE_STANDALONE_CONFIG = JSON.stringify(conf);
       else delete process.env.__NEXT_PRIVATE_STANDALONE_CONFIG;
+      const loadNextBegan = performance.now();
       const next = projectRequire("next");
+      startup.loadNextMs = Math.round(performance.now() - loadNextBegan);
       nextApp = next({ dev, dir: root, turbopack: dev || undefined, webpack: !dev || undefined, conf, hostname: "127.0.0.1" });
+      const prepareBegan = performance.now();
       await nextApp.prepare();
+      startup.prepareNextMs = Math.round(performance.now() - prepareBegan);
+      startup.resolutionIndex = resolutionIndex.stats();
       listeners = createListeners({ token, privateKey: keys.privateKey, handler: nextApp.getRequestHandler(), upgrade: nextApp.getUpgradeHandler() });
       const internalUrl = await listeners.start();
-      send({ type: "ready", internalUrl, nodeVersion: process.versions.node });
+      startup.entryToReadyMs = Math.round(performance.now() - entryBegan);
+      const cpu = process.cpuUsage();
+      startup.cpuMs = Math.round((cpu.user + cpu.system) / 1000);
+      send({ type: "ready", internalUrl, nodeVersion: process.versions.node, startup });
     } else if (message?.type === "configure" && listeners) {
       try {
         const settings = validatePatch(message.settings);
@@ -69,3 +91,4 @@ process.on("message", message => {
     void stop();
   });
 });
+send({ type: "booted" });

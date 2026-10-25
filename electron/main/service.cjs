@@ -82,6 +82,7 @@ class DesktopService extends EventEmitter {
   }
   async start() {
     const began = performance.now();
+    let runtimeReadyMs;
     if (this.child) throw new Error("Service is already started");
     this.state({ phase: "starting", error: null });
     const environment = { ...process.env };
@@ -124,11 +125,13 @@ class DesktopService extends EventEmitter {
         const onError = () => finish(new Error("Cannot start the bundled Node.js runtime"));
         const onExit = () => finish(new Error("Local service exited before becoming ready"));
         const onMessage = message => {
+          if (message.type === "booted") { runtimeReadyMs = Math.round(performance.now() - began); return; }
           if (message.type === "failed") finish(new Error(message.error));
           if (message.type !== "ready") return;
           if (!/^http:\/\/127\.0\.0\.1:\d+$/.test(message.internalUrl)) { finish(new Error("Invalid service readiness message")); return; }
           this.origin = message.internalUrl;
           this.status.nodeVersion = message.nodeVersion;
+          this.status.startup = message.startup ?? {};
           finish();
         };
         const finish = error => {
@@ -142,7 +145,7 @@ class DesktopService extends EventEmitter {
       const backendReadyMs = Math.round(performance.now() - began);
       // Native HTTP avoids initializing a general fetch stack for one loopback probe.
       await checkHealth(this.origin, this.token);
-      this.state({ phase: "running", startup: { backendReadyMs, healthReadyMs: Math.round(performance.now() - began) } });
+      this.state({ phase: "running", startup: { ...this.status.startup, runtimeReadyMs, backendReadyMs, healthReadyMs: Math.round(performance.now() - began) } });
     } catch (error) {
       await this.stop();
       this.state({ phase: "error", error: error.message });

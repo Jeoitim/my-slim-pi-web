@@ -6,10 +6,12 @@ import { resolve, join } from "node:path";
 import assert from "node:assert/strict";
 
 const baseline = process.argv.includes("--baseline");
+const reportName = process.env.PI_DESKTOP_STARTUP_REPORT || (baseline ? "before" : "after");
+if (!/^[a-z0-9-]+$/.test(reportName)) throw new Error("Startup report name must contain only lowercase letters, numbers and hyphens");
 const executablePath = process.env.PI_DESKTOP_E2E_EXECUTABLE || resolve("dist-desktop/win-unpacked/MySlimPiWeb.exe");
 const samples = [];
 for (let index = 0; index < 3; index++) {
-  const area = resolve(`.local/startup-${baseline ? "before" : "after"}-${randomUUID()}`);
+  const area = resolve(`.local/startup-${reportName}-${randomUUID()}`);
   await mkdir(join(area, "agent"), { recursive: true });
   await mkdir(join(area, "userData"), { recursive: true });
   const environment = { ...process.env, PI_DESKTOP_TEST_USER_DATA: join(area, "userData"), PI_CODING_AGENT_DIR: join(area, "agent") };
@@ -42,7 +44,7 @@ for (let index = 0; index < 3; index++) {
     }
     const scriptBytes = await page.evaluate(() => performance.getEntriesByType("resource")
       .filter(entry => entry.initiatorType === "script").reduce((bytes, entry) => bytes + entry.decodedBodySize, 0));
-    if (index === 2) await page.screenshot({ path: resolve(`.local/desktop-startup-${baseline ? "before" : "after"}.png`) });
+    if (index === 2) await page.screenshot({ path: resolve(`.local/desktop-startup-${reportName}.png`) });
     samples.push({ navigationMs, interactiveMs, retryShown, version: status.version, scriptBytes, startup: status.startup ?? null });
     console.log(JSON.stringify(samples.at(-1)));
   } catch (error) {
@@ -56,5 +58,5 @@ for (let index = 0; index < 3; index++) {
 }
 const median = [...samples].sort((a, b) => a.interactiveMs - b.interactiveMs)[1];
 const report = { baseline, executablePath, samples, medianInteractiveMs: median.interactiveMs };
-await writeFile(resolve(`.local/desktop-startup-${baseline ? "before" : "after"}.json`), JSON.stringify(report, null, 2));
+await writeFile(resolve(`.local/desktop-startup-${reportName}.json`), JSON.stringify(report, null, 2));
 console.log(JSON.stringify({ medianInteractiveMs: median.interactiveMs }));

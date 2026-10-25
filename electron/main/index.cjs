@@ -2,6 +2,7 @@ const { app, BrowserWindow, ipcMain, shell, clipboard, Tray, Menu, nativeImage, 
 const { join, dirname, delimiter } = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { DesktopService } = require("./service.cjs");
+const { appendStartupRecord } = require("./startup-log.cjs");
 const { readSettings, writeSettings, validatePatch } = require("./settings.cjs");
 const { assertSender, isAppUrl, externalLink } = require("./security.cjs");
 const { validateClipboardText } = require("./clipboard.cjs");
@@ -288,7 +289,14 @@ async function boot() {
   process.env.PATH = `${dirname(node)}${delimiter}${process.env.PATH ?? ""}`;
   service = new DesktopService({ node, root, dev, version,
     entry: app.isPackaged ? join(process.resourcesPath, "desktop-host/electron/server/index.cjs") : undefined });
-  service.on("status", updateTray);
+  let loggedStartup;
+  service.on("status", status => {
+    updateTray();
+    if (status.phase === "running" && status.startup && status.startup !== loggedStartup) {
+      loggedStartup = status.startup;
+      void appendStartupRecord(app.getPath("userData"), status).catch(() => {});
+    }
+  });
   // Start Node while Chromium creates its window and native menus.
   const started = service.start();
   void started.catch(() => {});

@@ -10,7 +10,8 @@ export interface ServiceStatus {
   passwordConfigured: boolean;
   version: string;
   nodeVersion: string;
-  startup?: { backendReadyMs: number; healthReadyMs: number };
+  startup?: { backendReadyMs: number; healthReadyMs: number; runtimeReadyMs?: number; startupAssetsMs?: number; entryToReadyMs?: number; cpuMs?: number; loadNextMs?: number; prepareNextMs?: number; compileCache?: "enabled" | "disabled" | "unavailable";
+    resolutionIndex?: { state: string; hits: number; misses: number; entries: number; sources?: { state: string; hits: number; entries: number } } };
 }
 export interface DesktopBridge {
   readonly platform: "win32" | "darwin" | "linux";

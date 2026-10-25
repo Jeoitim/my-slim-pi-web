@@ -103,7 +103,13 @@ try {
   assert.equal(localRead, 200);
   const privateSessions = await page.evaluate(async () => await (await fetch("/api/sessions")).json());
   assert.ok(JSON.stringify(privateSessions).includes(fixtureId));
-  assert.deepEqual(await (await publicApi("/api/sessions")).json(), privateSessions);
+  const publicSessions = await (await publicApi("/api/sessions")).json();
+  // Background catalog enrichment can advance the revision between these two
+  // sequential requests without changing the session rows or entrance identity.
+  const { sessionListVersion: privateRevision, ...privateSnapshot } = privateSessions;
+  const { sessionListVersion: publicRevision, ...publicSnapshot } = publicSessions;
+  assert.deepEqual(publicSnapshot, privateSnapshot);
+  assert.ok(Number.isSafeInteger(privateRevision) && Number.isSafeInteger(publicRevision) && publicRevision >= privateRevision);
   const remoteStatus = host => new Promise((resolve, reject) => {
     const request = http.get({ hostname: "127.0.0.1", port, path: "/api/sessions", headers: { host, authorization: auth } }, response => {
       response.resume(); response.once("end", () => resolve(response.statusCode));

@@ -1,10 +1,12 @@
-import { cp, mkdir, readFile, writeFile, stat, chmod } from "node:fs/promises";
+import { cp, mkdir, readFile, writeFile, stat, chmod, rm } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { spawn } from "node:child_process";
 import { fileURLToPath } from "node:url";
 import { createRequire } from "node:module";
 import { stageNextResources } from "./stage-resources.mjs";
+import { pruneDependencyMetadata, pruneForeignPtyPrebuilds } from "./prune-resources.mjs";
+import { warmCompileCache } from "./warm-compile-cache.mjs";
 const root = fileURLToPath(new URL("../../", import.meta.url));
 const require = createRequire(import.meta.url);
 if (Number(process.versions.node.split(".")[0]) !== 24) throw new Error("Build desktop releases with Node.js 24 LTS (the executable is bundled)");
@@ -40,6 +42,10 @@ const npmScript = process.env.npm_execpath;
 if (!npmScript || !existsSync(npmScript)) throw new Error("Use npm run desktop:build so the matching npm runtime can be bundled");
 console.log("Installing the locked production dependency tree (Node ABI, no Electron rebuild)…");
 await run(process.execPath, [npmScript, "ci", "--omit=dev", "--ignore-scripts", "--no-audit", "--no-fund"], server);
+const pruned = await pruneDependencyMetadata(join(server, "node_modules"));
+console.log(`Removed ${pruned.files} dependency declaration/map files (${(pruned.bytes / 1048576).toFixed(1)} MiB).`);
+const nativePruned = await pruneForeignPtyPrebuilds(join(server, "node_modules"));
+console.log(`Removed ${nativePruned.files} foreign-platform PTY prebuild files (${(nativePruned.bytes / 1048576).toFixed(1)} MiB).`);
 const binaryName = process.platform === "win32" ? "node.exe" : "node";
 await cp(process.execPath, join(runtime, binaryName));
 await chmod(join(runtime, binaryName), 0o755);
@@ -69,4 +75,12 @@ for (const helper of ["build/Release/spawn-helper", `prebuilds/${process.platfor
 await writeFile(join(runtime, "runtime.json"), JSON.stringify({ node: process.version, platform: process.platform, arch: process.arch }, null, 2));
 console.log("Validating the bundled Node runtime and native terminal…");
 await run(join(runtime, binaryName), [fileURLToPath(new URL("./verify-runtime.cjs", import.meta.url)), server]);
+console.log("Indexing production module paths and packing startup JavaScript with the bundled Node runtime…");
+await warmCompileCache(join(runtime, binaryName), server);
+await run(join(runtime, binaryName), [fileURLToPath(new URL("./verify-startup-resources.mjs", import.meta.url)), server]);
+// Production reads two startup assets, rather than thousands of bytecode files.
+// If those assets are missing or stale, the normal loader can create a local cache.
+await rm(join(server, ".compile-cache"), { recursive: true, force: true });
+// Warmup must not distribute runtime HTML cached against the staging directory.
+await rm(join(server, ".desktop/next/server/route-cache"), { recursive: true, force: true });
 console.log("Desktop resources ready. Run npm run desktop:pack to create the installer.");
