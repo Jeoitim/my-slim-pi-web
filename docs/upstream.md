@@ -4,7 +4,7 @@
 
 基底为 `https://github.com/agegr/pi-web.git` 默认分支 main，基准提交 `e533d9b`，上游版本 0.12.2。2026-10-22 审查并集成 `7c0778a..e533d9b` 的六项修复：隐藏页面释放空闲事件流、worktree 短暂失败不入缓存、删除供应商时清除重命名记录、实时活跃时间、保留 models.json 符号链接和 macOS 新会话快捷键。保留完整 Git 历史、MIT LICENSE及原 CONTRIBUTING / AGENTS；通用介绍直接链接上游 README。`origin` 指向本项目公开仓库 [Jeoitim/my-slim-pi-web](https://github.com/Jeoitim/my-slim-pi-web)，`upstream` 保留原上游地址。
 
-本 fork 当前版本 `0.12.2-jeoitim.4`。同一上游发布版本下递增 `jeoitim` 修订号；集成新的上游发布版本后从 `.1` 开始，本次上游仍为 0.12.2，故不重置修订号。package.json / package-lock.json 同步修改。fork 不自动查询或推荐上游 npm / GitHub 应用更新，升级由本仓库维护和分发流程完成。
+本 fork 当前版本 `0.12.2-jeoitim.7`。同一上游发布版本下递增 `jeoitim` 修订号；集成新的上游发布版本后从 `.1` 开始，本次上游仍为 0.12.2，故不重置修订号。package.json / package-lock.json 同步修改。fork 不自动查询或推荐上游 npm / GitHub 应用更新，升级由本仓库维护和分发流程完成。
 
 ## 同步
 

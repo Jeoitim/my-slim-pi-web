@@ -16,6 +16,8 @@
 
 ## Quick Start
 
+Repository cleanup on Windows / PowerShell 7: `pwsh -NoProfile -File ./clean-local.ps1` previews known generated output; add `-Execute` to remove it after stopping local development/build/test processes. This is the repository cleanup script, not an uninstaller. Keep dependencies, configuration and desktop installers/checksums; never substitute a blanket `git clean -fdx`. Validate changes with `scripts/test-clean-local.ps1`. See [repository-cleanup.md](docs/repository-cleanup.md).
+
 ```bash
 npm run dev   # port 30141
 ```

@@ -26,6 +26,8 @@ node electron/scripts/release-artifacts.mjs verify-tag v<版本>
 
 ## 触发发布
 
+本地构建和验收完成后，可使用仓库清理脚本移除中间产物：先运行 `pwsh -NoProfile -File ./clean-local.ps1` 预览，再加 `-Execute` 执行。它保留依赖、配置以及 `dist-desktop` 安装包和校验文件；详细边界与脚本测试见 [仓库清理](repository-cleanup.md)。清理不代替发布校验，Release 附件仍由 GitHub runner 重新构建。
+
 把已验证的发布提交推送到 `origin/my-slim-pi-web`，再只推送本次 tag：
 
 ```sh
