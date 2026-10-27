@@ -78,6 +78,7 @@ await run(join(runtime, binaryName), [fileURLToPath(new URL("./verify-runtime.cj
 console.log("Indexing production module paths and packing startup JavaScript with the bundled Node runtime…");
 await warmCompileCache(join(runtime, binaryName), server);
 await run(join(runtime, binaryName), [fileURLToPath(new URL("./verify-startup-resources.mjs", import.meta.url)), server]);
+await run(join(runtime, binaryName), [fileURLToPath(new URL("./verify-startup-coverage.mjs", import.meta.url)), server]);
 // Production reads two startup assets, rather than thousands of bytecode files.
 // If those assets are missing or stale, the normal loader can create a local cache.
 await rm(join(server, ".compile-cache"), { recursive: true, force: true });

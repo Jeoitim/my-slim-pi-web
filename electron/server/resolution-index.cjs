@@ -52,7 +52,7 @@ function startResolutionIndex(root, { dev = false, record = false } = {}) {
   let identity;
   let entries = new Map();
   try {
-    identity = { schema: 1, node: process.versions.node, platform: process.platform, arch: process.arch,
+    identity = { schema: 2, node: process.versions.node, platform: process.platform, arch: process.arch,
       version: JSON.parse(readFileSync(join(root, "package.json"), "utf8")).version,
       buildId: readFileSync(join(root, ".desktop/next/BUILD_ID"), "utf8").trim() };
     if (!record && useIndex) {
@@ -79,8 +79,8 @@ function startResolutionIndex(root, { dev = false, record = false } = {}) {
       const data = JSON.parse(gunzipSync(readFileSync(join(root, SOURCE_FILE)), { maxOutputLength: 64 * 1024 * 1024 }).toString("utf8"));
       if (JSON.stringify(data.identity) !== JSON.stringify(identity) || !Array.isArray(data.modules)) throw new Error("Stale source pack");
       for (const entry of data.modules) {
-        if (!Array.isArray(entry) || entry.length !== 3 || !expand(entry[0]) || !["module", "commonjs"].includes(entry[1]) || typeof entry[2] !== "string") throw new Error("Invalid source pack");
-        sources.set(entry[0], { format: entry[1], source: entry[2] });
+        if (!Array.isArray(entry) || entry.length !== 3 || !expand(entry[0]) || !["module", "commonjs", "auto"].includes(entry[1]) || typeof entry[2] !== "string") throw new Error("Invalid source pack");
+        sources.set(entry[0], { format: entry[1] === "auto" ? undefined : entry[1], source: entry[2] });
       }
       sourceStats.state = "active";
       sourceStats.entries = sources.size;
@@ -110,7 +110,12 @@ function startResolutionIndex(root, { dev = false, record = false } = {}) {
       return { ...sources.get(relative), shortCircuit: true };
     }
     const result = nextLoad(url, context);
-    if (record && eligible && ["module", "commonjs"].includes(result.format) && result.source != null) {
+    // Node's synchronous CommonJS loader returns an undefined format for .js
+    // files whose type is determined later by its ordinary package/syntax rules.
+    // Preserve that result, rather than dropping hundreds of Next/undici modules
+    // from the pack or forcing ambiguous JavaScript to become CommonJS.
+    const autoJavaScript = result.format === undefined && /\.(?:js|cjs|mjs)$/.test(relative ?? "");
+    if (record && eligible && (["module", "commonjs"].includes(result.format) || autoJavaScript) && result.source != null) {
       sources.set(relative, { format: result.format, source: typeof result.source === "string" ? result.source : Buffer.from(result.source).toString("utf8") });
       sourceStats.entries = sources.size;
     }
@@ -121,7 +126,7 @@ function startResolutionIndex(root, { dev = false, record = false } = {}) {
     save() {
       if (record) {
         writeFileSync(join(root, INDEX_FILE), JSON.stringify({ identity, entries: [...entries] }));
-        writeFileSync(join(root, SOURCE_FILE), gzipSync(JSON.stringify({ identity, modules: [...sources].map(([path, value]) => [path, value.format, value.source]) }), { level: 6 }));
+        writeFileSync(join(root, SOURCE_FILE), gzipSync(JSON.stringify({ identity, modules: [...sources].map(([path, value]) => [path, value.format ?? "auto", value.source]) }), { level: 6 }));
       }
     },
     close() { hook.deregister(); },

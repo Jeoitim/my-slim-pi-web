@@ -76,7 +76,7 @@ process.on("message", message => {
     } else if (message?.type === "configure" && listeners) {
       try {
         const settings = validatePatch(message.settings);
-        if (settings.externalControl && !process.env.PI_WEB_PASSWORD) throw new Error("Set PI_WEB_PASSWORD before enabling external control");
+      if (settings.externalControl && !process.env.PI_WEB_PASSWORD) throw new Error("Configure a Web password in Desktop settings or PI_WEB_PASSWORD before enabling external control");
         const externalUrl = await listeners.configure(settings);
         send({ type: "configured", id: message.id, externalUrl });
       } catch (error) {

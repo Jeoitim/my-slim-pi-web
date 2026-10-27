@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { fileURLToPath, pathToFileURL } from "node:url";
 import { spawnSync } from "node:child_process";
+import { gunzipSync } from "node:zlib";
 
 const helper = fileURLToPath(new URL("../server/resolution-index.cjs", import.meta.url));
 async function fixture(t) {
@@ -20,6 +21,10 @@ async function fixture(t) {
     "node_modules/pkg/cjs.cjs": "exports.kind='require'; exports.Shared=require('./shared.cjs');",
     "node_modules/pkg/esm.mjs": "import Shared from './shared.cjs'; export {Shared}; export const kind='import', origin=import.meta.url;",
     "node_modules/future/index.js": "module.exports = 'fallback';",
+    "node_modules/auto-cjs/package.json": JSON.stringify({ main: "index.js" }),
+    "node_modules/auto-cjs/index.js": "module.exports = 'automatic-commonjs';",
+    "node_modules/auto-esm/package.json": JSON.stringify({ main: "index.js" }),
+    "node_modules/auto-esm/index.js": "export const marker = 'automatic-esm';",
   };
   for (const [name, source] of Object.entries(files)) {
     await mkdir(join(root, name, ".."), { recursive: true });
@@ -32,14 +37,17 @@ function run(root, { record = false, disabled = false, sourceDisabled = false, f
     const {createRequire}=require('node:module');
     const index=require(${JSON.stringify(helper)}).startResolutionIndex(${JSON.stringify(root)},{record:${record}});
     const req=createRequire(${JSON.stringify(join(root, "package.json"))});
+    const fs=require('node:fs');const read=fs.readFileSync;let scriptReads=0;
+    fs.readFileSync=function(path,...args){if(String(path).startsWith(${JSON.stringify(root)})&&/\\.(?:js|cjs|mjs)$/.test(String(path)))scriptReads++;return read.call(this,path,...args);};
     const cjs=req('pkg');
+    const autoCjs=req('auto-cjs'),autoEsm=req('auto-esm').marker;
     import(${JSON.stringify(pathToFileURL(join(root, ".desktop/next/entry.mjs")).href)}).then(async esm=>{
       const fallback=${future} ? req('future') : null;
       const before=index.stats().hits;
       const external=${extension ? `await import(${JSON.stringify(pathToFileURL(extension).href)})` : "null"};
       const externalHits=index.stats().hits-before;
       index.save();
-      console.log(JSON.stringify({cjs:cjs.kind,esm:esm.kind,identity:cjs.Shared===esm.Shared,origin:esm.origin,fallback,external:external?.default,externalHits,stats:index.stats()}));
+      console.log(JSON.stringify({cjs:cjs.kind,esm:esm.kind,identity:cjs.Shared===esm.Shared,origin:esm.origin,autoCjs,autoEsm,scriptReads,fallback,external:external?.default,externalHits,stats:index.stats()}));
     });`;
   const env = { ...process.env };
   delete env.NODE_OPTIONS;
@@ -77,6 +85,23 @@ test("portable index preserves conditional exports, module identity and new depe
   const plugin = run(installed, { extension: join(external, "extension.mjs") });
   assert.equal(plugin.external, "user version");
   assert.equal(plugin.externalHits, 0, "User extension dependency resolution must not use the packaged index");
+});
+
+test("the source pack serves auto-format CommonJS and ambiguous ESM without individual script reads", async t => {
+  const { root, area } = await fixture(t);
+  const recorded = run(root, { record: true });
+  assert.ok(recorded.scriptReads > 0, "Recording must observe ordinary filesystem loading");
+  const pack = JSON.parse(gunzipSync(await readFile(join(root, ".startup-sources.json.gz"))));
+  assert.ok(pack.modules.some(([path, format]) => path === "node_modules/auto-cjs/index.js" && format === "auto"));
+  assert.ok(pack.modules.some(([path, format]) => path === "node_modules/auto-esm/index.js" && format === "auto"));
+  const installed = join(area, "relocated auto-format");
+  await cp(root, installed, { recursive: true });
+  const replayed = run(installed);
+  assert.equal(replayed.scriptReads, 0, "Every recorded JavaScript module must be served from the source pack");
+  assert.equal(replayed.autoCjs, "automatic-commonjs");
+  assert.equal(replayed.autoEsm, "automatic-esm");
+  assert.equal(replayed.identity, true);
+  assert.ok(run(installed, { sourceDisabled: true }).scriptReads > 0, "The normal loader must remain available");
 });
 
 test("a corrupt or stale source pack falls back to files while the resolution index remains active", async t => {

@@ -1,8 +1,9 @@
-const { app, BrowserWindow, ipcMain, shell, clipboard, Tray, Menu, nativeImage, nativeTheme, session, dialog } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, clipboard, Tray, Menu, nativeImage, nativeTheme, session, dialog, safeStorage } = require("electron");
 const { join, dirname, delimiter } = require("node:path");
 const { pathToFileURL } = require("node:url");
 const { DesktopService } = require("./service.cjs");
 const { appendStartupRecord } = require("./startup-log.cjs");
+const { DesktopWebPassword, validateWebPassword } = require("./web-password.cjs");
 const { readSettings, writeSettings, validatePatch } = require("./settings.cjs");
 const { assertSender, isAppUrl, externalLink } = require("./security.cjs");
 const { validateClipboardText } = require("./clipboard.cjs");
@@ -10,7 +11,7 @@ const { version } = require("../../package.json");
 const { existsSync } = require("node:fs");
 
 const dev = process.argv.includes("--desktop-dev");
-let window, tray, service, settings, quitting = false, quitReady = false, allowWindowClose = false;
+let window, tray, service, settings, webPassword, quitting = false, quitReady = false, allowWindowClose = false;
 let closePrompt = null, quitPrompt = null;
 let operations = Promise.resolve();
 const settingsFile = () => join(app.getPath("userData"), "desktop-settings.json");
@@ -252,7 +253,19 @@ async function openWeb() {
 async function restart() {
   await showLoadingPage();
   await service.stop();
+  service.setPassword(await webPassword.load());
   return connect();
+}
+async function confirmPasswordRestart() {
+  const work = await readActiveWork();
+  if (!work.active) return true;
+  const result = await dialog.showMessageBox(window, {
+    type: "warning", title: "应用 Web 密码 / Apply Web password",
+    message: "重启后端以应用密码？ / Restart the local service?",
+    detail: `${activeWorkDetail(work, false)}\n\n这会中断当前任务、终端和待处理审批。 / Active tasks, terminals and approvals will be interrupted.`,
+    buttons: ["继续并重启 / Continue and restart", "取消 / Cancel"], defaultId: 1, cancelId: 1, noLink: true,
+  });
+  return result.response === 0;
 }
 const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
 async function loadApplication() {
@@ -282,12 +295,14 @@ async function connect(started = service.start()) {
 }
 async function boot() {
   settings = await readSettings(settingsFile());
+  webPassword = new DesktopWebPassword({ file: join(app.getPath("userData"), "desktop-web-password.bin"), safeStorage });
+  const password = await webPassword.load();
   const root = app.isPackaged ? join(process.resourcesPath, "server") : join(__dirname, "../..");
   const node = app.isPackaged ? join(process.resourcesPath, "runtime", process.platform === "win32" ? "node.exe" : "node") : process.env.PI_DESKTOP_NODE;
   if (!node) throw new Error("Launch desktop development with npm run desktop:dev");
   // Make the bundled Node/npm available to SDK extensions without modifying the user's PATH.
   process.env.PATH = `${dirname(node)}${delimiter}${process.env.PATH ?? ""}`;
-  service = new DesktopService({ node, root, dev, version,
+  service = new DesktopService({ node, root, dev, version, password,
     entry: app.isPackaged ? join(process.resourcesPath, "desktop-host/electron/server/index.cjs") : undefined });
   let loggedStartup;
   service.on("status", status => {
@@ -334,7 +349,29 @@ function registerIpc() {
   // Deliver the real paste event (text/images) to the focused editor/xterm.
   // No unrestricted clipboard-reading bridge is exposed to the renderer.
   handle("paste", () => { window.webContents.paste(); });
-  handle("status", () => ({ ...service.status }));
+  handle("status", async () => ({ ...service.status, webPassword: await webPassword.status() }));
+  handle("web-password-set", value => serial(async () => {
+    validateWebPassword(value);
+    if (webPassword.environmentControlled()) throw new Error("PASSWORD_ENVIRONMENT_CONTROLLED");
+    if (!await webPassword.available()) throw new Error("PASSWORD_STORAGE_UNAVAILABLE");
+    if (!await confirmPasswordRestart()) return false;
+    await webPassword.save(value);
+    await restart();
+    return true;
+  }));
+  handle("web-password-remove", () => serial(async () => {
+    if (!webPassword.saved) return false;
+    if (webPassword.environmentControlled()) { await webPassword.remove(); return true; }
+    if (!await confirmPasswordRestart()) return false;
+    const previous = settings;
+    const next = { ...settings, externalControl: false };
+    await writeSettings(settingsFile(), next);
+    try { await webPassword.remove(); }
+    catch (error) { await writeSettings(settingsFile(), previous); throw error; }
+    settings = next;
+    await restart();
+    return true;
+  }));
   handle("update", patch => serial(async () => {
     const next = { ...settings, ...validatePatch(patch) };
     await service.configure(next);

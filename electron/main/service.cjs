@@ -64,6 +64,11 @@ class DesktopService extends EventEmitter {
     this.status = { phase: "stopped", externalUrl: null, error: null, passwordConfigured: Boolean(password), version, nodeVersion: "" };
   }
   state(patch) { Object.assign(this.status, patch); this.emit("status", this.status); }
+  setPassword(password) {
+    if (this.child) throw new Error("Stop the local service before changing its password");
+    this.password = password;
+    this.state({ passwordConfigured: Boolean(password) });
+  }
   async activeWork() {
     if (!this.origin || this.status.phase !== "running") {
       return { active: false, runningSessionIds: [], awaitingInputSessionIds: [], backgroundSessionIds: [] };
@@ -88,12 +93,16 @@ class DesktopService extends EventEmitter {
     const environment = { ...process.env };
     delete environment.ELECTRON_RUN_AS_NODE;
     delete environment.NODE_OPTIONS;
+    for (const key of Object.keys(environment)) if (key.toUpperCase() === "PI_WEB_PASSWORD") delete environment[key];
+    const childPassword = this.password;
+    if (childPassword) environment.PI_WEB_PASSWORD = childPassword;
     const child = fork(this.entry, [], {
-      execPath: this.node, cwd: this.root, env: environment,
+      execPath: this.node, execArgv: [], cwd: this.root, env: environment,
       stdio: ["ignore", "pipe", "pipe", "ipc"], windowsHide: true,
     });
     this.child = child;
     const mask = text => {
+      if (childPassword) text = text.split(childPassword).join("[redacted]");
       for (const [key, value] of Object.entries(process.env)) {
         if (value && /(password|secret|token|api_?key)/i.test(key)) text = text.split(value).join("[redacted]");
       }

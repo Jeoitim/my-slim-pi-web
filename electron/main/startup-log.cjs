@@ -14,6 +14,9 @@ function startupRecord(status) {
     for (const key of ["hits", "misses", "entries"]) if (Number.isFinite(index[key])) record.resolutionIndex[key] = index[key];
     record.resolutionIndex.active = index.state === "active";
     record.resolutionIndex.sourcePackActive = index.sources?.state === "active";
+    for (const [field, key] of [["sourceHits", "hits"], ["sourceEntries", "entries"]]) {
+      if (Number.isFinite(index.sources?.[key])) record.resolutionIndex[field] = index.sources[key];
+    }
   }
   return record;
 }

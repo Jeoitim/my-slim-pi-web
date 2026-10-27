@@ -11,7 +11,7 @@ test("startup history retains slow first launches, is bounded and excludes crede
   t.after(() => rm(area, { recursive: true, force: true }));
   for (let i = 0; i < 23; i++) {
     await appendStartupRecord(area, { version: "test", nodeVersion: "24", token: "SECRET_TOKEN", origin: "SECRET_PATH",
-      startup: { backendReadyMs: i === 3 ? 71_000 : i, password: "SECRET_PASSWORD", resolutionIndex: { state: "active", hits: 12, sources: { state: "active" } } } });
+      startup: { backendReadyMs: i === 3 ? 71_000 : i, password: "SECRET_PASSWORD", resolutionIndex: { state: "active", hits: 12, sources: { state: "active", hits: 1500, entries: 2000 } } } });
   }
   const text = await readFile(join(area, "startup-history.json"), "utf8");
   const history = JSON.parse(text);
@@ -20,4 +20,6 @@ test("startup history retains slow first launches, is bounded and excludes crede
   assert.equal(history.at(-1).timings.backendReadyMs, 22);
   assert.equal(text.includes("SECRET"), false);
   assert.equal(history[0].resolutionIndex.sourcePackActive, true);
+  assert.equal(history[0].resolutionIndex.sourceHits, 1500);
+  assert.equal(history[0].resolutionIndex.sourceEntries, 2000);
 });

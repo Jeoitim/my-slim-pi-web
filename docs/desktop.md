@@ -50,7 +50,9 @@ npm run desktop:pack
 
 桌面构建精简生产依赖中的类型声明、源码映射和其他平台的 PTY 预编译文件。`.6` 性能候选版进一步生成可迁移的模块路径索引和压缩 JavaScript 启动资源包，分别减少路径查找与散文件读取；模块 URL、SDK 类身份和资源相对路径保持原样，原依赖保留供动态加载和回退。预热只读取空白隔离 AgentRoot 的首页和会话查询接口，不加载个人扩展或使用模型凭据；随后清除预热产生的 Next HTML 缓存。索引绑定 Node/平台/架构/应用版本/BUILD_ID，缺失、损坏或过期时回退到普通加载。正常快路径不再读取 `.5` 使用的数千个独立字节码缓存文件。
 
-对比测试分别设置 `PI_DESKTOP_DISABLE_RESOLUTION_INDEX=1` 和 `PI_DESKTOP_DISABLE_SOURCE_PACK=1`；开发模式不用这两项启动资源。Electron 会异步保留最近 20 次后端启动计时到 `app.getPath("userData")/startup-history.json`，不写凭据或会话内容。测量方法与验证边界见 [性能排查](desktop-performance.md)。首页已由 Next 静态预渲染，动态 API、SSE、终端和鉴权仍由原有 Next/Pi 后端统一提供。
+`.7` 补齐了 Node 自动判断格式的 JavaScript，避免 `.6` 启动包遗漏大量 CommonJS 文件。构建会实际检查后端和首页接口的模块源码读取次数必须为零，单独报告 Next 的数据清单读取；保留 CommonJS/ESM 原有语义及失败回退，不替换 Node 文件系统。
+
+对比测试分别设置 `PI_DESKTOP_DISABLE_RESOLUTION_INDEX=1` 和 `PI_DESKTOP_DISABLE_SOURCE_PACK=1`；开发模式不用这两项启动资源。Electron 会异步保留最近 20 次后端启动计时到 `app.getPath("userData")/startup-history.json`，包含源码包命中和条目数，不写凭据或会话内容。测量方法与验证边界见 [性能排查](desktop-performance.md)。首页已由 Next 静态预渲染，动态 API、SSE、终端和鉴权仍由原有 Next/Pi 后端统一提供。
 
 Windows 的打包脚本对固定版本 electron-builder 26.15.3 的 NSIS 缓存重命名故障提供小范围降级：仅在官方校验和完整解压已完成、最终 rename 返回 EPERM 时，用工具支持的目录覆盖继续。路径必须在本次构建缓存内，不修改第三方源码或伪造缓存完成状态。下载受网络限制时，可为构建过程设置 `ELECTRON_MIRROR` / `ELECTRON_BUILDER_BINARIES_MIRROR` 为可信镜像；仍保留校验。
 
@@ -58,7 +60,11 @@ Windows 的打包脚本对固定版本 electron-builder 26.15.3 的 NSIS 缓存�
 
 设置 → 桌面应用提供开关、端口、状态、打开 Web、复制地址、重启和退出。配置只写 Electron `app.getPath("userData")/desktop-settings.json`，不写 Agent 设置/会话。损坏配置保留并报错，恢复自己的备份后重试。
 
-启用前在启动环境设置长随机 `PI_WEB_PASSWORD`，桌面设置不会保存密码：
+推荐在设置 → 桌面应用中填写两次 Web 登录密码（至少 12 个字符），点击“保存密码并重启服务”。密码通过 Electron `safeStorage` 交给系统加密，密文单独保存在 `app.getPath("userData")/desktop-web-password.bin`；不会写入普通桌面配置、Agent 设置、日志或浏览器存储，也不会回显。Windows 使用当前用户的系统保护，因此复制密文到另一用户或机器不能作为迁移方式。系统安全存储不可用时拒绝保存，Linux 不接受 `basic_text` 降级。
+
+保存后重新登录，即可打开“本地 Web 入口”。后续从快捷方式启动会自动解密并注入后端环境，无需手动设置变量。修改密码会让旧登录失效；删除密码同时关闭并保存本地 Web 入口开关。保存或删除需要重启后端，会中断任务、终端和待处理审批；发现活动工作或无法确认状态时，原生对话框再次确认，取消不会修改密文。密文损坏时保留文件并提示重新设置或删除，外部入口保持关闭。
+
+仍支持在启动环境设置 `PI_WEB_PASSWORD`，且它优先于桌面保存的密码。此时界面显示来源并禁用密码设置；删除未使用的桌面密文不重启服务。要改用桌面密码，移除环境变量后完全退出并重新启动应用。例如为 Tunnel 额外配置环境：
 
 ```powershell
 $env:PI_CODING_AGENT_DIR = "$env:USERPROFILE/.pi/agent"
@@ -67,7 +73,7 @@ $env:PI_WEB_ALLOWED_HOSTS = 'agent.example.com'
 & 'C:/path/to/MySlimPiWeb.exe'
 ```
 
-Linux 使用 export / read -rsp。不要将密码放入源码、命令行参数或桌面配置。不会自动创建 Tunnel、保存 Cloudflare Token、打开防火墙、绑定 0.0.0.0 或修改路由器。
+Linux 使用 export / read -rsp。不要将明文密码放入源码、命令行参数或普通桌面配置。不会自动创建 Tunnel、保存 Cloudflare Token、打开防火墙、绑定 0.0.0.0 或修改路由器。
 
 端口接受 1–65535 整数，低于 1024 可能需要额外权限。变更先绑定新端口，成功才关闭旧入口；冲突保留旧入口和 Agent 会话。配置持久化失败恢复原入口。无需重启后端，但需同步修改 Tunnel 目标端口。
 
@@ -87,13 +93,15 @@ Linux 使用 export / read -rsp。不要将密码放入源码、命令行参数�
 
 启动时 Node 后端与原生窗口并行初始化。窗口先显示本地 `loading.html`：居中品牌图标、双语句子和不确定进度条；服务、健康检查和必要配置都就绪后自动导航到 WebUI。正常启动不显示 Retry，不执行一次多余的停止/重启；真实失败才切到错误页。健康请求使用原生 loopback HTTP，终端、文件预览、子代理预览和设置面板按需加载，不在聊天首页初始化 xterm 等可选模块。
 
-版本采用 `<上游基准版本>-jeoitim.<修订号>`，当前为 `0.12.2-jeoitim.6`。同一上游发布版本下递增修订号，完成新上游发布版本的独立集成 PR 后，基准更新并从 `.1` 开始。页面不请求上游更新接口；即使直接调用 `/api/app-update`，fork 版本也只返回本地版本，不连接 npm 上游或推荐上游安装包。此规则同时适用于本 fork 的 Web 版。
+版本采用 `<上游基准版本>-jeoitim.<修订号>`，当前本地候选为 `0.12.2-jeoitim.7`。同一上游发布版本下递增修订号，完成新上游发布版本的独立集成 PR 后，基准更新并从 `.1` 开始。页面不请求上游更新接口；即使直接调用 `/api/app-update`，fork 版本也只返回本地版本，不连接 npm 上游或推荐上游安装包。此规则同时适用于本 fork 的 Web 版。
 
 首版无自动更新器。退出应用后安装新版本；卸载保留 userData，安装不覆盖 AgentRoot、凭据、模型、技能和会话。回退用此前验证的安装包并保留用户目录。不要用上游 pi-web 自动更新覆盖 fork。首版安装包未签名，发布签名与可信下载另行处理。
 
 上游维护遵循 [AGENTS.md](../AGENTS.md)：`upstream` 纯跟踪 → 独立集成 PR → `my-slim-pi-web`。重点接点是 page/layout、DesktopShell/DesktopSettings、SettingsPanel、settings-navigation、remote-access 和 next.config；不复制 rpc-manager 或权限系统。
 
 ## 验证
+
+`npm run test:desktop:password` 使用 Windows 生产运行目录及隔离用户目录，实际经过系统加密、设置界面保存、重启登录、再次启动恢复、改密令旧登录失效、活动任务取消保护、环境变量覆盖、删除关闭入口和损坏密文恢复。通过 `PI_DESKTOP_E2E_EXECUTABLE` 可指定其他 Windows 产物。脚本不调用模型服务、不修改个人 AgentRoot；Linux 密钥环和 macOS 钥匙串需分别实机验证。
 
 运行 `npm run typecheck`、`npm run lint`、`npm test`、`npm run test:permissions`、`npm run test:desktop`。桌面测试覆盖配置/损坏、IPC 来源、签名伪造、双入口共享状态、流式输出、端口冲突回退和关闭入口后内部存活。生产资源验证包含真实 PTY。开发窗口成功不能替代实际安装产物验证；各平台与 Cloudflare 未验证项必须在交付中说明。
 

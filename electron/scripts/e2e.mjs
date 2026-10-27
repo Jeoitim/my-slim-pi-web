@@ -187,6 +187,10 @@ try {
   throw error;
 } finally {
   const child = app.process();
+  // Opening the fixture can initialize a wrapper or leave a status probe busy.
+  // Cleanup owns this disposable AgentRoot: explicitly accept stopping its work.
+  // Active-work cancellation itself is covered by the dedicated lifecycle checks.
+  await app.evaluate(({ dialog }) => { dialog.showMessageBox = async () => ({ response: 0 }); }).catch(() => {});
   await app.close();
   if (child.exitCode === null) {
     await Promise.race([

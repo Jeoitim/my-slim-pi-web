@@ -8,6 +8,7 @@ export interface ServiceStatus {
   externalUrl: string | null;
   error: string | null;
   passwordConfigured: boolean;
+  webPassword?: { saved: boolean; available: boolean; source: "none" | "stored" | "environment"; error: "read" | "decrypt" | "unavailable" | null };
   version: string;
   nodeVersion: string;
   startup?: { backendReadyMs: number; healthReadyMs: number; runtimeReadyMs?: number; startupAssetsMs?: number; entryToReadyMs?: number; cpuMs?: number; loadNextMs?: number; prepareNextMs?: number; compileCache?: "enabled" | "disabled" | "unavailable";
@@ -20,6 +21,8 @@ export interface DesktopBridge {
   paste(): Promise<void>;
   getStatus(): Promise<ServiceStatus>;
   updateSettings(patch: Partial<DesktopSettings>): Promise<DesktopSettings>;
+  setWebPassword(password: string): Promise<boolean>;
+  removeWebPassword(): Promise<boolean>;
   openLocalWeb(): Promise<void>;
   copyLocalWebUrl(): Promise<void>;
   restartService(): Promise<void>;

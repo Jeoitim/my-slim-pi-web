@@ -8,6 +8,8 @@ contextBridge.exposeInMainWorld("piDesktop", Object.freeze({
   paste: () => ipcRenderer.invoke("desktop:paste"),
   getStatus: () => ipcRenderer.invoke("desktop:status"),
   updateSettings: patch => ipcRenderer.invoke("desktop:update", patch),
+  setWebPassword: password => ipcRenderer.invoke("desktop:web-password-set", password),
+  removeWebPassword: () => ipcRenderer.invoke("desktop:web-password-remove"),
   openLocalWeb: () => ipcRenderer.invoke("desktop:open-web"),
   copyLocalWebUrl: () => ipcRenderer.invoke("desktop:copy-web"),
   restartService: () => ipcRenderer.invoke("desktop:restart"),

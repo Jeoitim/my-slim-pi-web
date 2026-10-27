@@ -11,6 +11,9 @@ html[data-desktop] .settings-dialog-backdrop { top: 36px; }
 .desktop-service-status { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin: 24px 0 16px; font-size: 13px; }
 .desktop-service-status code { font-size: 12px; margin-left: auto; overflow-wrap: anywhere; }
 .desktop-settings-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.desktop-web-password { display: grid; gap: 12px; margin: 20px 0; }
+.desktop-password-input { width: min(100%, 340px); box-sizing: border-box; padding: 8px 10px; border: 1px solid var(--border); border-radius: 6px; background: var(--bg); color: var(--text); font: inherit; }
+html[lang="zh-CN"] .desktop-web-password { font-family: "Microsoft YaHei", "Noto Sans SC", sans-serif; }
 
 /* Body portal escapes clipped/scrolling viewers; placement excludes the caption bar. */
 .sidebar-menu.desktop-context-menu { z-index: 2147483647; max-height: calc(100dvh - var(--desktop-titlebar-height, 0px) - 16px); font-family: var(--font-ui); }
