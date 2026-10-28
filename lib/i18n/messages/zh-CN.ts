@@ -13,7 +13,7 @@ export const zhCNLocale: LocalePlugin = {
     "desktop.title": "桌面应用",
     "desktop.externalControl": "外部控制",
     "desktop.localWeb": "本地 Web 入口",
-    "desktop.security": "外部控制提供受认证保护的本机浏览器入口。转发 Tunnel 前请先配置 Cloudflare Access。浏览器沿用远程 API 限制；桌面能力仅属于当前应用窗口。",
+    "desktop.security": "外部控制提供受认证保护的本机浏览器入口。转发 Tunnel 前请先配置 Cloudflare Access。浏览器可使用完整的 Web 功能；密码和端口等桌面宿主设置仍在当前应用窗口管理。",
     "desktop.passwordRequired": "请先设置 Web 登录密码，再启用本地 Web 入口。",
     "desktop.webPassword": "Web 登录密码",
     "desktop.confirmPassword": "确认密码",

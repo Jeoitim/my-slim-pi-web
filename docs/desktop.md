@@ -9,11 +9,11 @@ Electron 是宿主，Next.js / Pi SDK 仍是唯一后端。聊天、会话、权
 | 入口 | 行为 |
 | --- | --- |
 | 桌面内部 | 随机 loopback 端口，每次启动生成随机凭据，由 Electron 网络层注入；无凭据返回 403。隐藏地址不是安全边界。 |
-| 外部控制 | 默认关闭。开启时绑定 `127.0.0.1:<port>`，默认 30141。浏览器和 Tunnel 都必须登录 Web 密码，并受远程 API 白名单限制。 |
+| 外部控制 | 默认关闭。开启时绑定 `127.0.0.1:<port>`，默认 30141。浏览器和 Tunnel 都必须登录 Web 密码；已审查的 Web 功能可与桌面窗口同样使用。 |
 
 内部/外部身份由监听器覆盖请求头并用进程内 Ed25519 私钥签名。Next 和工具环境只有公钥；伪造 Host 或标记不能提升权限。普通 Web 启动没有公钥，保留既有 `PI_WEB_REMOTE` 行为。桌面即使继承 `PI_WEB_REMOTE=1`，有效内部签名仍识别为内部；外部入口始终使用远程限制。
 
-同机浏览器也走受限制入口；终端和配置维护等完整本地能力在桌面窗口使用。关闭外部控制会真正关闭固定监听端口及其连接，内部入口与 Agent 不受影响。这不是操作系统用户隔离：同一用户仍能调试进程或读取自己的 Agent 文件。
+同机浏览器也走登录入口；会话重命名、设置、终端等 Web 功能在浏览器与桌面窗口一致。桌面宿主的密码、端口与生命周期管理只在桌面窗口的 IPC 中提供，浏览器不能调用。关闭外部控制会真正关闭固定监听端口及其连接，内部入口与 Agent 不受影响。这不是操作系统用户隔离：同一用户仍能调试进程或读取自己的 Agent 文件。
 
 扩展兼容保持与 Pi TUI 同义：`pi-ask-user` 在 RPC/Web 模式使用 Pi 的 `select`/`input` 对话框，由桌面和浏览器渲染成原生表单；`pi-subagents` 的 `subagent-async` 与 `subagent-inspect` JSON widget 分别转为 Fleet 列表和任务检查器。上游 `/subagents`、Fleet Inspector 和插件页面继续保留，不用桌面专用字段改写扩展 API。
 
@@ -83,7 +83,7 @@ Linux 使用 export / read -rsp。不要将明文密码放入源码、命令行�
 
 继续按 [remote-access.md](remote-access.md) 配置覆盖整个域名的 Access 与 HTTPS。Tunnel 指向实际 `http://127.0.0.1:<port>`，保留外部 Host，域名精确列入 `PI_WEB_ALLOWED_HOSTS`。不改写 Host 为 localhost，不关闭 Web 密码。loopback 不是 Access/认证的替代品。
 
-外部请求始终保留认证、Host/Origin、API 和命令限制，不能使用 Electron IPC；新 API 默认远程拒绝。SSE 由同一 handler 直接写响应，无缓冲或响应超时，ASK 继续使用原 Agent 协议。真实 Tunnel/Access、公网 DNS、跨网络长期连接需用户账户验收，不能由本地测试替代。
+外部请求始终保留认证、Host/Origin 校验；已审查的 Web API 和 Agent 命令与桌面窗口一致，Electron IPC 不向浏览器开放；新 API 默认远程拒绝。SSE 由同一 handler 直接写响应，无缓冲或响应超时，ASK 继续使用原 Agent 协议。真实 Tunnel/Access、公网 DNS、跨网络长期连接需用户账户验收，不能由本地测试替代。
 
 ## 生命周期和更新
 

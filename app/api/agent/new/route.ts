@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { isRemoteRequest, remoteAgentCommandError } from "@/lib/remote-access";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { existsSync } from "fs";
 import { randomUUID } from "crypto";
@@ -25,15 +24,6 @@ export async function POST(req: Request) {
   let promptAccepted = false;
   try {
     const body = await req.json() as { cwd?: string; [key: string]: unknown };
-    if (isRemoteRequest(req)) {
-      if (body.toolNames !== undefined || !["prompt", "ensure_session"].includes(String(body.type))) {
-        return NextResponse.json({ error: "Remote session overrides are disabled" }, { status: 403 });
-      }
-      if (body.type === "prompt") {
-        const error = remoteAgentCommandError(body);
-        if (error) return NextResponse.json({ error }, { status: 403 });
-      }
-    }
     const { cwd, ...command } = body;
     commandType = typeof command.type === "string" ? command.type : undefined;
 

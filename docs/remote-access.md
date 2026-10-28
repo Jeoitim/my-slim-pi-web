@@ -38,7 +38,7 @@ export PI_WEB_PASSWORD
 npm start
 ```
 
-`PI_WEB_REMOTE=1` 会对 loopback 上的请求也应用远程限制。外部 Host 即使是 IP 地址也会自动进入远程限制，且必须显式列入 `PI_WEB_ALLOWED_HOSTS`；密码缺失时拒绝访问。始终设置 remote 标记，以免其他代理改写 Host 造成误判。不要用 `dev:lan` / `start:lan` 对外暴露服务。
+`PI_WEB_REMOTE=1` 会对 loopback 上的请求也应用远程认证和入口规则。外部 Host 即使是 IP 地址也会自动进入远程入口，且必须显式列入 `PI_WEB_ALLOWED_HOSTS`；密码缺失时拒绝访问。始终设置 remote 标记，以免其他代理改写 Host 造成误判。不要用 `dev:lan` / `start:lan` 对外暴露服务。
 
 ## cloudflared 示例
 
@@ -85,14 +85,14 @@ cloudflared tunnel --config "$HOME/.cloudflared/config.yml" run <TUNNEL_UUID>
 
 继续复用上游签名 Cookie、密码比对、登录/Basic 请求限速、Host 与跨站 Origin 检查。HTTPS/可信反向代理的 `X-Forwarded-Proto: https` 使登录 Cookie 带 `Secure`；Cookie 同时保留 `HttpOnly` 与 `SameSite=Lax`。外部域名必须精确列出，不使用通配符。API 的 Basic Auth 也需要经过 Access，不能因知道密码而绕过外层认证。
 
-远程 API 使用服务端白名单；新上游路由默认不开放。允许核心会话、聊天、模型列表、文件只读查看与工具事件流。禁止终端创建/输入/事件、直接 Shell、上传/允许外部链接、插件/技能安装、模型密钥/配置写入、MCP 管理/测试/登录、项目 trust 修改、worktree 写操作。Agent 命令正文还有单独校验，不能借 `/api/agent/new` 或已存在会话提交 `bash`、`set_tools`、任意命令类型或 `!` 命令。远程扩展斜杠命令仅开放精确的 `/approval-mode <mode>` 和 `/skill:`；其他扩展命令请本地使用。
+远程 API 使用服务端白名单；新上游路由默认不开放。已审查的 Web 功能与桌面窗口一致，包括会话重命名和删除、模型与密钥设置、技能和 MCP 管理、文件操作、终端及 Agent 命令。桌面宿主的密码、端口、退出与重启仍只经 Electron IPC 管理；打开本机文件管理器也只供本机使用。
 
-这些直接 Web 操作不会触发 Agent 的 `tool_call`，本地维护接口也不能称为受四模式保护。远程设置入口可能仍显示上游按钮，但服务器会返回明确的 403；前端隐藏不是安全边界。只读文件查看沿用上游路径授权，也不经过 Agent 审批。
+这些直接 Web 操作不会触发 Agent 的 `tool_call`，不能称为受四模式保护。启用外部控制前应确认 Web 密码和 Access 策略只允许受信任的人使用。文件查看与上传沿用服务端路径授权，也不经过 Agent 审批。
 
 ## SSE、长任务与验收
 
 上游 SSE 保留 `text/event-stream`、`no-cache, no-transform`、`X-Accel-Buffering: no`、30 秒心跳与断线重连/审批重放。不要为 `/api/*`、登录或 SSE 添加缓存规则，不要在中间代理缓冲事件。ASK 无限等待由 Agent 保持，不能用 HTTP 超时替代授权；网络断线不默认批准。
 
-部署后按顺序验收：未登录 Access 被拒绝；通过 Access 后仍需 Web 密码；新会话能逐块收到回复；长任务保持事件流；ASK 等待至少 90 秒仍不执行，批准/拒绝只作用于当前调用；断网重连重放未完成请求；Stop/关闭会话不执行待批工具；直接请求终端、上传及配置 API 返回 403；检查 Cookie 属性、异常 Host 与跨站请求拒绝。
+部署后按顺序验收：未登录 Access 被拒绝；通过 Access 后仍需 Web 密码；新会话能逐块收到回复；长任务保持事件流；ASK 等待至少 90 秒仍不执行，批准/拒绝只作用于当前调用；断网重连重放未完成请求；Stop/关闭会话不执行待批工具；会话重命名、设置保存与终端在浏览器可用；检查 Cookie 属性、异常 Host、跨站请求和未知 API 拒绝。
 
 本次已验证本地 SDK/审批、SSE 和应用层认证边界。**没有用户的真实 Tunnel/Access 配置，尚未完成经 Cloudflare 公网链路的端到端验收。** 本地测试通过不等于 Tunnel、Access 会话过期或实际运营商网络已验证。具体结果见 [兼容报告](compatibility.md)。

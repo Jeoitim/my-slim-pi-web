@@ -2,6 +2,7 @@
 
 ## Desktop host
 - `DesktopSettings` exists only with the isolated preload's `window.piDesktop` capability (`useDesktop`), never by user agent/URL. Writes use main-frame IPC, not Web APIs. Reuse ConfigButton/ConfigSwitch/ConfigField and three locales. Port edits bind before unbinding and never replace the Agent backend. See `docs/desktop.md`.
+- The other Settings sections use ordinary Web APIs and work through the authenticated external-control browser entrance. Keep their routes in `lib/remote-access.ts` when adding one; the browser must not show a local-maintenance refusal for a setting it renders.
 - AppShell loads SettingsPanel only when Settings opens. Its toolbar uses the small `SettingsSectionIcon` module directly, so rendering a settings shortcut does not eagerly load all configuration panels.
 
 ## My Slim Pi fork

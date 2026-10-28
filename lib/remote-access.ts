@@ -24,44 +24,24 @@ export function isRemoteRequest(request: Request, environment: NodeJS.ProcessEnv
   } catch { return true; }
 }
 
-/** Remote APIs fail closed: new upstream routes need an explicit audit before exposure. */
-export function isRemoteApiAllowed(pathname: string, method: string): boolean {
-  if (pathname === "/api/web-auth") return ["GET", "POST", "DELETE"].includes(method);
-  if (method === "GET") {
-    return /^\/api\/(?:sessions(?:\/.*)?|agent(?:\/[^/]+(?:\/events)?)?|models|home|file-index|git\/(?:status|diff)|push\/config|app-update)$/.test(pathname)
-      || pathname.startsWith("/api/files/");
-  }
-  if (method === "POST") {
-    return /^\/api\/agent\/(?:new|[^/]+)$/.test(pathname)
-      || /^\/api\/agent\/[^/]+\/lease$/.test(pathname)
-      || pathname === "/api/sessions/ui-state"
-      || pathname === "/api/sessions/stats"
-      || pathname === "/api/cwd/validate";
-  }
-  return false;
-}
+// Browser features use the same backend on both desktop ingress paths. Keep
+// this list explicit so a newly added API is reviewed before public exposure.
+// Native DesktopSettings use IPC and are intentionally absent from this map.
+const REMOTE_API_ROUTES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/^\/api\/(?:app-update|auth\/providers|cache-miss-notices|cwd\/browse|file-index|git\/(?:status|diff)|home|mcp|models|models-config|models-config\/catalog|models\/enabled|my-slim-pi\/settings|plugins|project-trust|push\/config|skills|skills\/content|subagents\/profiles|subagents\/settings|tools\/settings|web-auth|worktrees)$/, "GET"],
+  [/^\/api\/(?:agent\/running|sessions|sessions\/search|sessions\/ui-state)$/, "GET"],
+  [/^\/api\/(?:agent\/[^/]+(?:\/bash-output|\/events)?|mcp\/sign-in\/[^/]+|sessions\/[^/]+(?:\/context|\/export|\/state)?|sessions\/[^/]+\/entries\/[^/]+\/(?:thinking|tool-result-image)|subagents\/[^/]+|terminal\/[^/]+(?:\/events)?|auth\/login\/[^/]+)$/, "GET"],
+  [/^\/api\/files\/.+$/, "GET,POST"],
+  [/^\/api\/(?:agent\/new|cwd\/browse|cwd\/validate|default-cwd|mcp|mcp\/sign-in|mcp\/test|models\/refresh|models-config\/discover|models-config\/test|plugins|plugins\/check|project-trust|provider-usage\/query|push\/subscribe|sessions\/delete|sessions\/stats|sessions\/ui-state|skills\/check|skills\/install|skills\/search|skills\/update|terminal|web-auth|worktrees)$/, "POST"],
+  [/^\/api\/(?:agent\/[^/]+(?:\/lease)?|auth\/(?:api-key|login|logout)\/[^/]+|mcp\/sign-in\/[^/]+|sessions\/[^/]+\/(?:auto-name|fork)|subagents\/[^/]+|terminal\/[^/]+)$/, "POST"],
+  [/^\/api\/(?:cache-miss-notices|models\/default|models\/enabled|models-config|my-slim-pi\/settings|subagents\/profiles|subagents\/settings|tools\/settings)$/, "PUT"],
+  [/^\/api\/(?:sessions\/[^/]+|skills|subagents\/profiles)$/, "PATCH"],
+  [/^\/api\/(?:auth\/api-key\/[^/]+|mcp\/sign-in\/[^/]+|sessions\/[^/]+|subagents\/profiles|terminal\/[^/]+|web-auth|worktrees)$/, "DELETE"],
+];
 
-const REMOTE_AGENT_COMMANDS = new Set([
-  "prompt", "steer", "follow_up", "abort", "abort_compaction", "get_state", "get_tools",
-  "get_commands", "get_messages", "get_session_stats", "set_model", "set_thinking_level",
-  "set_permission_mode", "extension_ui_response", "extension_ui_input", "compact", "navigate_tree",
-  "run_extension_command",
-]);
-export function remoteAgentCommandError(command: Record<string, unknown>): string | null {
-  if (!REMOTE_AGENT_COMMANDS.has(String(command.type))) return "This command is disabled for remote access";
-  if (command.toolNames !== undefined) return "Remote tool overrides are disabled; My Slim Pi owns the loadout";
-  if (command.type === "run_extension_command") {
-    if (command.name !== "subagents-inspect-rpc") return "This extension command requires local access";
-    if (typeof command.args !== "string" || command.args.length > 8192) return "Invalid inspection request";
-  }
-  if (["prompt", "steer", "follow_up"].includes(String(command.type))) {
-    if (typeof command.message !== "string") return "A message is required";
-    const message = command.message.trimStart();
-    if (message.startsWith("!")) return "Direct shell commands bypass Agent approval and are disabled remotely";
-    if (message.startsWith("/") && !/^\/approval-mode (?:auto|act|ask|plan)\s*$/.test(message)
-      && !message.startsWith("/skill:")) return "This extension command requires local access";
-  }
-  return null;
+/** Unknown routes and methods remain closed to remote requests. */
+export function isRemoteApiAllowed(pathname: string, method: string): boolean {
+  return REMOTE_API_ROUTES.some(([route, methods]) => route.test(pathname) && methods.split(",").includes(method));
 }
 
 /** An external Host must be explicitly listed, even when it is an IP literal. */

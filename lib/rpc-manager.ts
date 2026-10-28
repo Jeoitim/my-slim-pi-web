@@ -1339,7 +1339,7 @@ export class AgentSessionWrapper {
         const args = typeof command.args === "string" ? command.args : "";
         if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(name)) throw new Error("Invalid extension command name");
         if (args.length > 8192) throw new Error("Extension command arguments are too long");
-        // This local-only bridge is used by trusted UI affordances such as the
+        // This direct bridge is used by UI affordances such as the
         // pi-subagents inspector. A direct command that emits a widget is safe
         // while a turn runs; other commands must not race the active turn.
         if (this.isRunning() && name !== "subagents-inspect-rpc") {

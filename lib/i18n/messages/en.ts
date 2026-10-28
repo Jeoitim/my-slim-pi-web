@@ -13,7 +13,7 @@ export const enLocale: LocalePlugin = {
     "desktop.title": "Desktop",
     "desktop.externalControl": "External control",
     "desktop.localWeb": "Local Web entrance",
-    "desktop.security": "External control opens an authenticated browser entrance on loopback. Configure Cloudflare Access before forwarding a Tunnel. Browser clients keep remote API restrictions; desktop capabilities stay in this window.",
+    "desktop.security": "External control opens an authenticated browser entrance on loopback. Configure Cloudflare Access before forwarding a Tunnel. Browsers can use all Web features; host settings such as the password and port remain in this desktop window.",
     "desktop.passwordRequired": "Set a Web login password before enabling the local Web entrance.",
     "desktop.webPassword": "Web login password",
     "desktop.confirmPassword": "Confirm password",

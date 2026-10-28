@@ -27,11 +27,12 @@ assert.equal((await request("/api/sessions",{headers:{host:"attacker.example.tes
 assert.equal((await request("/api/agent/new",{method:"POST",headers:{origin:"https://attacker.example.test","sec-fetch-site":"cross-site"}})).status,403);
 const login=await post("/api/web-auth",{password});assert.equal(login.status,200);
 for(const flag of ["httponly","secure","samesite=lax"])assert.ok(login.headers.get("set-cookie").toLowerCase().includes(flag),flag);
-for(const path of ["/api/terminal","/api/files/test?type=upload","/api/plugins","/api/skills/install","/api/mcp/test","/api/project-trust"])assert.equal((await post(path,{})).status,403,path);
-assert.equal((await request("/api/terminal/one/events")).status,403);
+assert.equal((await request("/api/models-config")).status,200);
+assert.equal((await request("/api/mcp")).status,200);
+assert.equal((await request("/api/open-in-explorer")).status,403);
+assert.equal((await request("/api/new-upstream-endpoint")).status,403);
+assert.equal((await post("/api/terminal",{})).status,400);
 const cwd=join(root,"web-test-project");
-assert.equal((await post("/api/agent/new",{cwd,type:"bash",command:"echo MUST_NOT_RUN"})).status,403);
-assert.equal((await post("/api/agent/new",{cwd,type:"ensure_session",toolNames:[]})).status,403);
 const created=await post("/api/agent/new",{cwd,type:"ensure_session"});assert.equal(created.status,200);
 const {sessionId}=await created.json();assert.ok(sessionId);
 const path="/api/agent/"+encodeURIComponent(sessionId);
@@ -40,7 +41,7 @@ assert.equal(lease.status,200);
 assert.deepEqual(await lease.json(),{success:true,running:false,awaitingInput:false,subagentsActive:false});
 assert.equal((await request(path+"/lease",{method:"POST"})).status,400);
 assert.equal((await request(path+"/lease?holder=remote-smoke",{method:"POST",headers:{authorization:""}})).status,401);
-assert.equal((await post(path,{type:"bash",command:"echo MUST_NOT_RUN"})).status,403);
+assert.equal((await request("/api/sessions/unknown-session",{method:"PATCH",headers:{"content-type":"application/json"},body:JSON.stringify({name:"Remote rename"})})).status,404);
 assert.equal((await post(path,{type:"set_permission_mode",mode:"ask"})).status,200);
 const state=await (await request(path)).json();assert.equal(state.state.extensionStatuses.find(s=>s.key==="timrt-permission-mode").text,"ask");
 async function eventsUntil(check,action){
@@ -59,4 +60,4 @@ async function eventsUntil(check,action){
 await eventsUntil(text=>text.includes('"statusText":"plan"'),async()=>assert.equal((await post(path,{type:"set_permission_mode",mode:"plan"})).status,200));
 await eventsUntil(text=>text.includes('"connected"'));
 const reconnected=await (await request(path)).json();assert.equal(reconnected.state.extensionStatuses.find(s=>s.key==="timrt-permission-mode").text,"plan");
-console.log("Remote HTTP authentication, cookies, CSRF, restricted APIs, permission command, SSE and reconnect: OK");
+console.log("Remote HTTP authentication, cookies, CSRF, Web API parity, permission command, SSE and reconnect: OK");
