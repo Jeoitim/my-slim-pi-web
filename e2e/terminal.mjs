@@ -144,7 +144,7 @@ try {
       await page.getByText("File viewer fixture", { exact: true }).waitFor();
       assert.equal(await page.locator(".terminal-panel").count(), 1);
       assert.equal(await page.locator(".terminal-panel").isVisible(), false);
-      await page.getByRole("tab", { name: "Terminal: workspace-a", exact: true }).click();
+      await page.getByRole("tab", { name: /^Terminal: workspace-a(?: · .+)?$/ }).click();
       await ready();
       await hidePanel();
       await showSidebar();
@@ -229,7 +229,7 @@ try {
       await run("exit 7");
       await page.getByText("Process exited with code 7", { exact: true }).waitFor();
       const currentId = await page.evaluate(() => JSON.parse(sessionStorage.getItem("pi-web:terminal-tabs")).tabs[0].id);
-      await page.getByRole("button", { name: "Terminate terminal workspace-a", exact: true }).click();
+      await page.getByRole("button", { name: /^Terminate terminal workspace-a(?: · .+)?$/ }).click();
       await page.locator(".terminal-panel").waitFor({ state: "detached" });
       assert.equal((await fetch(`${base}/api/terminal/${currentId}`)).status, 404);
 
@@ -244,7 +244,7 @@ try {
       await showSidebar();
       await showTab("Files");
       await page.getByRole("button", { name: "Open workspace terminal", exact: true }).click();
-      await page.getByRole("button", { name: "Terminate terminal workspace-a", exact: true }).click();
+      await page.getByRole("button", { name: /^Terminate terminal workspace-a(?: · .+)?$/ }).click();
       releaseCreation();
       await page.locator(".terminal-panel").waitFor({ state: "detached" });
       await page.unroute("**/api/terminal");
@@ -269,12 +269,12 @@ try {
       assert.deepEqual(workspaceTabs.map((tab) => tab.cwd).sort(), [workspace, otherWorkspace].sort());
       const otherId = workspaceTabs.find((tab) => tab.cwd === otherWorkspace).id;
       assert.equal((await (await fetch(`${base}/api/terminal/${otherId}`)).json()).cwd, otherWorkspace);
-      await page.getByRole("tab", { name: "Terminal: workspace-a", exact: true }).click();
+      await page.getByRole("tab", { name: /^Terminal: workspace-a(?: · .+)?$/ }).click();
       await run("printf '\\nWORKSPACE:%s\\n' \"$PR695_WORKSPACE\"");
       await waitOutput("WORKSPACE:retained");
       await page.screenshot({ path: join(artifacts, `${viewport.width}-workspaces.png`), fullPage: true });
       for (const name of ["workspace-a", "workspace-b"]) {
-        await page.getByRole("button", { name: `Terminate terminal ${name}`, exact: true }).click();
+        await page.getByRole("button", { name: new RegExp(`^Terminate terminal ${name}(?: · .+)?$`) }).click();
       }
       await page.locator(".terminal-panel").waitFor({ state: "detached" });
       for (const terminalId of created) assert.equal((await fetch(`${base}/api/terminal/${terminalId}`)).status, 404);

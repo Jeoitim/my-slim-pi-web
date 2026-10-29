@@ -24,3 +24,11 @@ test("storage corruption cannot create invalid or duplicate terminal tabs", () =
   }));
   assert.deepEqual(saved, { tabs: [{ ...tab, restored: true }], activeId: null, open: false });
 });
+
+test("different shells in one workspace survive refresh and keep distinct identities", () => {
+  const pwsh = newTerminalTab("/repo", { id: "pwsh", name: "PowerShell 7" });
+  const cmd = newTerminalTab("/repo", { id: "cmd", name: "Command Prompt" });
+  const saved = restoreTerminalTabs(JSON.stringify({ tabs: [pwsh, cmd, { ...cmd, id: "a".repeat(32), shellId: "../unsafe" }], activeId: cmd.id }));
+  assert.deepEqual(saved.tabs, [{ ...pwsh, restored: true }, { ...cmd, restored: true }]);
+  assert.equal(saved.activeId, cmd.id);
+});

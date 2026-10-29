@@ -1,6 +1,6 @@
 {
   "name": "my-slim-pi-web",
-  "version": "0.12.2-jeoitim.8",
+  "version": "0.12.2-jeoitim.9",
   "description": "My Slim Pi 的 WebUI 最简实现",
   "license": "MIT",
   "engines": {
@@ -33,6 +33,8 @@
     "start": "next start -H 127.0.0.1 -p 30141",
     "lint": "eslint .",
     "test:terminal": "node e2e/terminal.mjs",
+    "test:terminal:shells": "node e2e/terminal-shells.mjs",
+    "test:desktop:terminal": "node e2e/terminal-shells.mjs --desktop",
     "test:e2e": "node e2e/run.mjs",
     "test:process-ui": "node e2e/process-details.mjs",
     "test": "node --experimental-strip-types --test \"app/**/*.test.mjs\" \"components/**/*.test.mjs\" \"hooks/**/*.test.mjs\" \"lib/**/*.test.mjs\" \"public/**/*.test.mjs\"",

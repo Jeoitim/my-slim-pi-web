@@ -22,6 +22,7 @@ import { TERMINAL_XTERM_THEMES } from "@/lib/terminal-theme";
 import { TerminalExtraKeys, useTerminalExtraKeysVisible } from "./TerminalExtraKeys";
 import type { TerminalTab } from "./terminal-tab-state";
 import { registerDesktopTerminal } from "@/lib/desktop-context-target";
+import type { TerminalShellInfo } from "@/lib/terminal-shells";
 
 interface Props {
   tab: TerminalTab;
@@ -29,17 +30,26 @@ interface Props {
   onRestart: () => void;
   onClosed: () => void;
   onCloseError: () => void;
+  onOpenShell: (shell: TerminalShellInfo) => void;
+  onShellResolved: (shell: TerminalShellInfo) => void;
 }
 
-export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }: Props) {
+export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError, onOpenShell, onShellResolved }: Props) {
   const { t } = useI18n();
   const { id, cwd, restored } = tab;
   const containerRef = useRef<HTMLDivElement>(null);
   const terminalRef = useRef<Terminal | null>(null);
   const startRef = useRef<Promise<void>>(Promise.resolve());
   const writerRef = useRef<ReturnType<typeof createTerminalWriter> | null>(null);
-  const callbacksRef = useRef({ onClosed, onCloseError });
-  callbacksRef.current = { onClosed, onCloseError };
+  const callbacksRef = useRef({ onClosed, onCloseError, onShellResolved });
+  callbacksRef.current = { onClosed, onCloseError, onShellResolved };
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  // A tab's profile is immutable for its ID; resolving its display metadata
+  // must not tear down xterm or launch another process.
+  const shellIdRef = useRef(tab.shellId);
+  const [shells, setShells] = useState<TerminalShellInfo[]>([]);
+  const [shellListError, setShellListError] = useState<string | null>(null);
   const [status, setStatus] = useState<"connecting" | "ready" | "exited" | "error">("connecting");
   const [error, setError] = useState<string | null>(null);
   const [exitCode, setExitCode] = useState<number | null>(null);
@@ -54,6 +64,14 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
   const fontSizeRef = useRef(fontSize);
   fontSizeRef.current = fontSize;
   const refitRef = useRef<() => void>(() => {});
+
+  const loadShells = useCallback(() => {
+    void terminalRequest("/api/terminal/shells").then(data => {
+      setShells(data.shells ?? []);
+      setShellListError(null);
+    }).catch((reason: Error) => setShellListError(reason.message));
+  }, []);
+  useEffect(loadShells, [loadShells]);
 
   const consumeModifiers = useCallback(() => {
     const current = modifiersRef.current;
@@ -160,7 +178,9 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
     const unsubscribeFonts = subscribeFontPreferences(updateFont);
 
     const connect = () => {
-      if (disposed || exited || !navigator.onLine) return;
+      // navigator.onLine describes external network availability. A desktop's
+      // loopback backend can still work offline; let EventSource test the route.
+      if (disposed || exited || events?.readyState === EventSource.OPEN) return;
       events?.close();
       events = new EventSource(`/api/terminal/${encodeURIComponent(id)}/events${offset === undefined ? "" : `?after=${offset}`}`);
       events.onmessage = (message) => {
@@ -186,7 +206,7 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
         setStatus("ready");
         fitAndResize();
         writer.resize(Math.max(2, terminal.cols), Math.max(2, terminal.rows));
-        if (container.offsetWidth && container.offsetHeight) terminal.focus();
+        if (activeRef.current && container.offsetWidth && container.offsetHeight) terminal.focus();
       };
       events.onerror = () => {
         if (disposed || exited) return;
@@ -200,13 +220,15 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
       fitAndResize();
       if (restored || reconnectKey > 0) {
         // Restoring a tab must never silently launch a replacement shell.
-        await terminalRequest(`/api/terminal/${encodeURIComponent(id)}`);
+        const data = await terminalRequest(`/api/terminal/${encodeURIComponent(id)}`);
+        if (!disposed && data.shell) callbacksRef.current.onShellResolved(data.shell);
       } else {
-        await terminalRequest("/api/terminal", {
+        const data = await terminalRequest("/api/terminal", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ id, cwd, cols: terminal.cols, rows: terminal.rows }),
+          body: JSON.stringify({ id, cwd, shellId: shellIdRef.current, cols: terminal.cols, rows: terminal.rows }),
         });
+        if (!disposed && data.shell) callbacksRef.current.onShellResolved(data.shell);
       }
       connect();
     })().catch((reason: Error) => {
@@ -224,7 +246,6 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
     const pageShow = (event: PageTransitionEvent) => { if (event.persisted) connect(); };
     window.addEventListener("pagehide", pageHide);
     window.addEventListener("pageshow", pageShow);
-    window.addEventListener("offline", pageHide);
     window.addEventListener("online", connect);
     return () => {
       disposed = true;
@@ -236,7 +257,6 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
       onResize.dispose();
       window.removeEventListener("pagehide", pageHide);
       window.removeEventListener("pageshow", pageShow);
-      window.removeEventListener("offline", pageHide);
       window.removeEventListener("online", connect);
       terminal.dispose();
       unregisterContextMenu();
@@ -290,6 +310,15 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
           <span title={cwd}>{cwd}</span>
         </div>
         <div className="terminal-panel-actions">
+          <select aria-label={t("terminal.shell")} title={t("terminal.shellHint")} value={tab.shellId ?? ""}
+            disabled={Boolean(tab.closing) || shells.length === 0} onFocus={loadShells}
+            onChange={event => {
+              const shell = shells.find(shell => shell.id === event.target.value);
+              if (shell) onOpenShell(shell);
+            }}>
+            {!shells.some(shell => shell.id === tab.shellId) && <option value={tab.shellId ?? ""}>{tab.shellName ?? t("terminal.defaultShell")}</option>}
+            {shells.map(shell => <option key={shell.id} value={shell.id}>{shell.name}</option>)}
+          </select>
           {status === "error" && (
             <button type="button" onClick={() => setReconnectKey((key) => key + 1)} disabled={Boolean(tab.closing)} title={t("terminal.reconnect")} aria-label={t("terminal.reconnect")}>
               <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
@@ -316,10 +345,17 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError }
         </div>
       </header>
       <div>
+        {shellListError && <div className="terminal-panel-error" role="alert">{t("terminal.shellListError")} {shellListError} <button type="button" onClick={loadShells}>{t("terminal.retryShells")}</button></div>}
         {error && <div className="terminal-panel-error" role="alert">{error}</div>}
         {status === "exited" && <div className="terminal-panel-exit" role="status">{exitCode === null ? t("terminal.exited") : t("terminal.exitCode", { code: exitCode })}</div>}
       </div>
-      <div className="terminal-xterm"><div ref={containerRef} className="terminal-xterm-host" /></div>
+      <div className="terminal-xterm" onPointerDown={event => {
+        if (!active) return;
+        // A click outside xterm's own element would blur its textarea after
+        // this handler. Cancel only that default; xterm keeps text selection.
+        if (!(event.target instanceof Element) || !event.target.closest(".xterm")) event.preventDefault();
+        terminalRef.current?.focus();
+      }}><div ref={containerRef} className="terminal-xterm-host" /></div>
       {showExtraKeys && <TerminalExtraKeys modifiers={modifiers} onKey={sendExtraKey} onToggleModifier={toggleModifier} />}
     </section>
   );

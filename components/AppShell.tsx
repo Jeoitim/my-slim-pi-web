@@ -17,6 +17,7 @@ import { SystemPromptPanel } from "./SystemPromptPanel";
 import { ToolDefinitionsPanel } from "./ToolDefinitionsPanel";
 import { AgentSessionPanel } from "./AgentSessionPanel";
 import { newTerminalTab, restoreTerminalTabs, TERMINAL_TABS_KEY, type TerminalTab } from "./terminal-tab-state";
+import type { TerminalShellInfo } from "@/lib/terminal-shells";
 import { useTheme } from "@/hooks/useTheme";
 import { useFontPreferences } from "@/hooks/useFontPreferences";
 import { useI18n } from "@/hooks/useI18n";
@@ -545,7 +546,7 @@ export function AppShell() {
     ...fileTabs,
     ...terminalTabs.map((tab) => ({
       id: tab.id,
-      label: getFileName(tab.cwd) || tab.cwd,
+      label: `${getFileName(tab.cwd) || tab.cwd}${tab.shellName ? ` · ${tab.shellName}` : ""}`,
       filePath: tab.cwd,
       kind: "terminal" as const,
       closing: Boolean(tab.closing),
@@ -574,7 +575,7 @@ export function AppShell() {
     if (!terminalsRestored) return;
     try {
       window.sessionStorage.setItem(TERMINAL_TABS_KEY, JSON.stringify({
-        tabs: terminalTabs.map(({ id, cwd }) => ({ id, cwd })),
+        tabs: terminalTabs.map(({ id, cwd, shellId, shellName }) => ({ id, cwd, shellId, shellName })),
         activeId: activeFileTabId,
         open: rightPanelOpen,
       }));
@@ -1211,14 +1212,15 @@ export function AppShell() {
     handleOpenFile(filePath, getFileName(filePath), { sourceSessionId: selectedSession?.id ?? null, page });
   }, [handleOpenFile, selectedSession?.id]);
 
-  const handleOpenTerminal = useCallback((cwd: string) => {
-    const existing = terminalTabs.find((tab) => tab.cwd === cwd);
-    const tab = existing ?? newTerminalTab(cwd);
+  const handleOpenTerminal = useCallback((cwd: string, shell?: TerminalShellInfo) => {
+    const matches = (tab: TerminalTab) => !tab.closing && tab.cwd === cwd && (!shell || tab.shellId === shell.id);
+    const existing = terminalTabs.find(tab => tab.id === activeFileTabId && matches(tab)) ?? terminalTabs.find(matches);
+    const tab = existing ?? newTerminalTab(cwd, shell);
     if (!existing) setTerminalTabs((tabs) => [...tabs, tab]);
     setActiveFileTabId(tab.id);
     setRightPanelOpen(true);
     if (isMobile) setSidebarOpen(false);
-  }, [terminalTabs, isMobile]);
+  }, [terminalTabs, activeFileTabId, isMobile]);
 
   // Subagent work opens in a right-panel tab instead of hijacking the main chat.
   const handleOpenSubagentTab = useCallback((sessionId: string, label: string) => {
@@ -1246,7 +1248,7 @@ export function AppShell() {
   };
 
   const handleTerminalClosed = (tab: TerminalTab) => {
-    const replacement = tab.closing === "restart" ? newTerminalTab(tab.cwd) : null;
+    const replacement = tab.closing === "restart" ? newTerminalTab(tab.cwd, tab.shellId ? { id: tab.shellId, name: tab.shellName ?? tab.shellId } : undefined) : null;
     const remaining = terminalTabs.filter((item) => item.id !== tab.id);
     setTerminalTabs((tabs) => tabs.flatMap((item) => item.id !== tab.id ? [item] : replacement ? [replacement] : []));
     setActiveFileTabId((current) => current !== tab.id ? current : replacement?.id ?? remaining.at(-1)?.id ?? fileTabs.at(-1)?.id ?? lastAgentTabId(agentTabs));
@@ -2779,6 +2781,8 @@ export function AppShell() {
                 onRestart={() => setTerminalTabs((tabs) => tabs.map((item) => item.id === tab.id ? { ...item, closing: "restart" } : item))}
                 onClosed={() => handleTerminalClosed(tab)}
                 onCloseError={() => setTerminalTabs((tabs) => tabs.map((item) => item.id === tab.id ? { ...item, closing: undefined } : item))}
+                onOpenShell={shell => handleOpenTerminal(tab.cwd, shell)}
+                onShellResolved={shell => setTerminalTabs(tabs => tabs.map(item => item.id === tab.id && (item.shellId !== shell.id || item.shellName !== shell.name) ? { ...item, shellId: shell.id, shellName: shell.name } : item))}
               />
             </div>
           ))}

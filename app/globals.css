@@ -629,6 +629,7 @@ html.dark .web-login-error {
   align-items: center;
   min-width: 0;
   gap: 8px;
+  flex: 1;
 }
 
 .terminal-panel-path span:last-child {
@@ -662,6 +663,22 @@ html.dark .web-login-error {
   color: var(--terminal-muted);
   cursor: pointer;
   font: inherit;
+}
+
+.terminal-panel-header select {
+  min-width: 0;
+  max-width: 145px;
+  border: 1px solid var(--terminal-border);
+  border-radius: 5px;
+  padding: 3px 5px;
+  background: var(--terminal-header-bg);
+  color: var(--terminal-strong);
+  font: inherit;
+  cursor: pointer;
+}
+
+@media (max-width: 640px) {
+  .terminal-panel-header select { max-width: 125px; }
 }
 
 .terminal-panel-exit {

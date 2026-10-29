@@ -2,6 +2,7 @@ import { randomUUID } from "crypto";
 import { homedir } from "os";
 import type { IPty } from "node-pty";
 import { samePath } from "./paths";
+import { resolveTerminalShell, terminalShellInfo, type TerminalShellInfo } from "./terminal-shells";
 
 export type TerminalEvent =
   | { type: "output"; data: string; offset: number; reset?: boolean }
@@ -13,6 +14,7 @@ type TerminalListener = (event: TerminalEvent) => void;
 interface TerminalRecord {
   pty: IPty;
   cwd: string;
+  shell: TerminalShellInfo;
   listeners: Set<TerminalListener>;
   backlog: string;
   offset: number;
@@ -71,10 +73,11 @@ function dimension(value: number, fallback: number): number {
   return Math.min(1000, Math.max(2, Number.isFinite(value) ? Math.floor(value) : fallback));
 }
 
-export function createTerminal(cwd: string, cols: number, rows: number, id: string = randomUUID()): string {
+export function createTerminal(cwd: string, cols: number, rows: number, id: string = randomUUID(), shellId?: string): string {
   const existing = registry().get(id);
   if (existing) {
     if (!samePath(existing.cwd, cwd)) throw new Error("Terminal belongs to a different workspace");
+    if (shellId !== undefined && existing.shell.id !== shellId) throw new Error("Terminal belongs to a different shell");
     return id;
   }
   let spawn: typeof import("node-pty").spawn;
@@ -92,11 +95,8 @@ export function createTerminal(cwd: string, cols: number, rows: number, id: stri
       { cause: error },
     );
   }
-  const shell = process.platform === "win32"
-    ? process.env.ComSpec ?? "cmd.exe"
-    : process.env.SHELL || "/bin/sh";
-  const args = process.platform === "win32" ? [] : ["-l"];
-  const pty = spawn(shell, args, {
+  const shell = resolveTerminalShell(shellId);
+  const pty = spawn(shell.path, shell.args, {
     name: "xterm-256color",
     cols: dimension(cols, 80),
     rows: dimension(rows, 24),
@@ -106,6 +106,7 @@ export function createTerminal(cwd: string, cols: number, rows: number, id: stri
   const record: TerminalRecord = {
     pty,
     cwd,
+    shell: terminalShellInfo(shell),
     listeners: new Set(),
     backlog: "",
     offset: 0,
@@ -139,6 +140,10 @@ export function hasTerminal(id: string): boolean {
 
 export function getTerminalCwd(id: string): string | undefined {
   return registry().get(id)?.cwd;
+}
+
+export function getTerminalShell(id: string): TerminalShellInfo | undefined {
+  return registry().get(id)?.shell;
 }
 
 export function subscribeTerminal(

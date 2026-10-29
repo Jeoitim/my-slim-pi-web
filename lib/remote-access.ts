@@ -29,7 +29,7 @@ export function isRemoteRequest(request: Request, environment: NodeJS.ProcessEnv
 // Native DesktopSettings use IPC and are intentionally absent from this map.
 const REMOTE_API_ROUTES: ReadonlyArray<readonly [RegExp, string]> = [
   [/^\/api\/(?:app-update|auth\/providers|cache-miss-notices|cwd\/browse|file-index|git\/(?:status|diff)|home|mcp|models|models-config|models-config\/catalog|models\/enabled|my-slim-pi\/settings|plugins|project-trust|push\/config|skills|skills\/content|subagents\/profiles|subagents\/settings|tools\/settings|web-auth|worktrees)$/, "GET"],
-  [/^\/api\/(?:agent\/running|sessions|sessions\/search|sessions\/ui-state)$/, "GET"],
+  [/^\/api\/(?:agent\/running|sessions|sessions\/search|sessions\/ui-state|terminal\/shells)$/, "GET"],
   [/^\/api\/(?:agent\/[^/]+(?:\/bash-output|\/events)?|mcp\/sign-in\/[^/]+|sessions\/[^/]+(?:\/context|\/export|\/state)?|sessions\/[^/]+\/entries\/[^/]+\/(?:thinking|tool-result-image)|subagents\/[^/]+|terminal\/[^/]+(?:\/events)?|auth\/login\/[^/]+)$/, "GET"],
   [/^\/api\/files\/.+$/, "GET,POST"],
   [/^\/api\/(?:agent\/new|cwd\/browse|cwd\/validate|default-cwd|mcp|mcp\/sign-in|mcp\/test|models\/refresh|models-config\/discover|models-config\/test|plugins|plugins\/check|project-trust|provider-usage\/query|push\/subscribe|sessions\/delete|sessions\/stats|sessions\/ui-state|skills\/check|skills\/install|skills\/search|skills\/update|terminal|web-auth|worktrees)$/, "POST"],

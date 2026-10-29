@@ -5,11 +5,25 @@ in the right panel's existing tab bar. Each terminal tab keeps the cwd it was
 created with. Files still mount only their active viewer; terminal panels stay
 mounted behind inactive tabs, hidden panels, and session or project switches.
 
+The terminal header lists installed Shell profiles. Selecting one opens or
+focuses that Shell's terminal in the same workspace, keeping the previous
+terminal and its tasks running. Tab labels include the Shell name. Restart
+uses the selected Shell again; refresh reconnects to the same processes.
+
+Windows detects PowerShell 7, Windows PowerShell, Command Prompt and Git Bash
+from executable files on PATH and known installation directories. New terminals
+prefer PowerShell 7 when present. Unix respects the installed login `$SHELL`
+and detects zsh, bash, fish and sh. Discovery does not execute any programs;
+only a server-discovered profile ID may be supplied at creation.
+
+Click anywhere in the terminal display, including its padding, to focus input.
+An offline network indicator does not block a working local desktop connection.
+
 ## Lifecycle
 
 - Each new tab generates a random terminal ID before creation. Creation with
   the same ID and cwd is idempotent, including React Strict Mode's repeated
-  effects. An existing ID cannot be reused for another cwd.
+  effects. An existing ID cannot be reused for another cwd or Shell.
 - `sessionStorage` retains terminal IDs, cwds, and the active terminal layout
   across refresh. Restored tabs first check the existing server instance and
   never silently start replacement processes after expiry or server restart.
@@ -62,3 +76,10 @@ checks. `npm run test:terminal` starts an isolated development server and runs
 desktop/mobile browser checks using generated session fixtures. Install the
 Playwright Chromium browser first with `npx playwright install chromium`.
 The browser check prints the temporary location of its screenshots and log.
+
+After `npm run desktop:build`, `npm run test:terminal:shells` tests real keyboard
+input on the production backend with an isolated AgentRoot. After packaging,
+`npm run test:desktop:terminal` repeats it in Electron. These checks never send
+commands through the input API to stand in for typing: they click the display,
+type, press Enter and check output rows. They also verify shell switching,
+refresh retention, reconnect, offline loopback and narrow-screen layout.
