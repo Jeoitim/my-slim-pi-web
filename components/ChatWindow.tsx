@@ -1,17 +1,19 @@
 "use client";
 import { registerAbortHandler } from "@/hooks/useKeyboardShortcuts";
 import { PiLogo } from "./PiLogo";
-import { Fragment, memo, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
+import { Fragment, useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { createPortal } from "react-dom";
 import type { AgentMessage, AssistantContentBlock, AssistantMessage, BashExecutionMessage, BlockingExtensionUiRequest, ExtensionUiRequest, SessionInfo, SessionTreeNode, ToolResultMessage } from "@/lib/types";
 import { normalizeCustomPanelLines } from "@/lib/ansi";
 import { splitNoticeText } from "@/lib/notice-text";
 import { EXTENSION_DIALOG_BASE_WIDTH, fitExtensionDialogWidth } from "@/lib/extension-dialog-fit";
 import { asBracketedPaste, toTerminalKeyData } from "@/lib/terminal-input";
-import { collapsesProcessDetails, countToolCallBlocks, getDisplayableAssistantBlocks, hasAssistantAnswer, isHiddenCustomMessage, isMessageGroupAnchor, splitFinalAssistantBlocks } from "@/lib/message-display";
+import { countToolCallBlocks, getDisplayableAssistantBlocks, hasAssistantAnswer, isHiddenCustomMessage, isMessageGroupAnchor } from "@/lib/message-display";
+import { getProcessActivity, type ProcessActivity } from "@/lib/process-activity";
+import { ProcessDetailsGroup } from "./ProcessDetailsGroup";
 import { extractTurnWrittenFiles, type WrittenFile } from "@/lib/turn-written-files";
 import { getFinalAnswerViews, keepWrittenFiles, type FinalAnswerViews } from "@/lib/turn-views";
-import { formatTurnDuration, getTurnDurationMs } from "@/lib/turn-duration";
+import { getTurnDurationMs } from "@/lib/turn-duration";
 import { buildQuotedSelection } from "@/lib/quoted-selection";
 import { dropMentionText, splitDroppedItems, uploadFiles, type DroppedItem } from "@/lib/file-upload-client";
 import { MessageView } from "./MessageView";
@@ -25,8 +27,7 @@ import { AnsiText } from "./AnsiText";
 import { useI18n } from "@/hooks/useI18n";
 import { phaseLabel } from "@/lib/chat-phase-label";
 import { useAgentSession, type AgentEndInfo, type NewSessionChoices, type NoticeItem } from "@/hooks/useAgentSession";
-import { selectHasStreamingContent, selectIsStreaming, selectStreamingMessage, useStreamingSelector } from "@/hooks/useStreamingSelector";
-import type { StreamingStore } from "@/lib/streaming-message";
+import { selectHasStreamingContent, selectIsStreaming, useStreamingSelector } from "@/hooks/useStreamingSelector";
 import { useDragDrop } from "@/hooks/useDragDrop";
 import { useIsMobile } from "@/hooks/useIsMobile";
 import { useScrollbarVisibility } from "@/hooks/useScrollbarVisibility";
@@ -35,8 +36,8 @@ import type { AppUpdateResponse } from "@/lib/api-types";
 import { shouldCheckUpstreamUpdate } from "@/lib/app-update";
 import type { ToolEntry } from "@/lib/tool-presets";
 import type { SettingsSection } from "@/lib/settings-navigation";
-import { getTranscriptNotices, summarizeCacheMisses, type CacheMissSummary } from "@/lib/transcript-notices";
-import { cacheMissSummaryText, TRANSCRIPT_NOTICE_WARNING_COLOR, TranscriptNoticeLines } from "@/components/TranscriptNotices";
+import { getTranscriptNotices, summarizeCacheMisses } from "@/lib/transcript-notices";
+import { TranscriptNoticeLines } from "@/components/TranscriptNotices";
 import { findChatScrollAnchor, type ChatScrollPosition } from "@/lib/chat-scroll-position";
 import {
   captureScrollDistance,
@@ -167,17 +168,7 @@ function NewSessionUpdateLink({
   );
 }
 
-function hasFinalAssistantAnswer(message: AgentMessage): boolean {
-  if (message.role !== "assistant") return false;
-  return splitFinalAssistantBlocks(message as AssistantMessage).answerBlocks.some((block) => (
-    block.type === "image" || (block.type === "text" && block.text.trim().length > 0)
-  ));
-}
-
 function findFinalAssistantIndex(messages: AgentMessage[], userIdx: number, endIdx: number): number {
-  for (let candidateIdx = endIdx - 1; candidateIdx > userIdx; candidateIdx--) {
-    if (hasFinalAssistantAnswer(messages[candidateIdx])) return candidateIdx;
-  }
   for (let candidateIdx = endIdx - 1; candidateIdx > userIdx; candidateIdx--) {
     if (messages[candidateIdx]?.role === "assistant") return candidateIdx;
   }
@@ -196,59 +187,6 @@ function getUserInputText(message: AgentMessage): string | null {
     .join("\n")
     .trim();
   return text.length > 0 ? text : null;
-}
-
-function ProcessDetailsGroup({ messageCount, toolCallCount, durationMs, cacheMisses, defaultExpanded = false, reveal = false, children, t }: { messageCount: number; toolCallCount: number; durationMs?: number; cacheMisses?: CacheMissSummary; defaultExpanded?: boolean; reveal?: boolean; children: ReactNode; t: (key: string, params?: Record<string, string | number>) => string }) {
-  const [expanded, setExpanded] = useState(defaultExpanded);
-  useLayoutEffect(() => {
-    if (reveal) setExpanded(true);
-  }, [reveal]);
-  // The chevron already says this folds; the words stay in the accessible name.
-  const parts = [`${messageCount} ${t(messageCount === 1 ? "chat.message" : "chat.messages")}`];
-  if (toolCallCount > 0) parts.push(`${toolCallCount} ${t(toolCallCount === 1 ? "chat.toolCall" : "chat.toolCalls")}`);
-  if (durationMs !== undefined) parts.push(t("chat.turnDuration", { time: formatTurnDuration(durationMs) }));
-  // Folded, the cache misses inside are added up here (#1265); open, each shows under its step.
-  const cacheMissText = cacheMisses && !(expanded || reveal) ? cacheMissSummaryText(t, cacheMisses) : undefined;
-
-  return (
-    <div style={{ marginBottom: 14 }}>
-      <button
-        type="button"
-        aria-expanded={expanded || reveal}
-        aria-label={[t("chat.processDetails"), ...parts, ...(cacheMissText ? [cacheMissText] : [])].join(" · ")}
-        onClick={() => setExpanded((v) => !v)}
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 8,
-          width: "auto",
-          maxWidth: "100%",
-          minHeight: 24,
-          padding: "2px 0",
-          border: "none",
-          background: "transparent",
-          color: "var(--text-muted)",
-          cursor: "pointer",
-          fontSize: 12,
-          textAlign: "left",
-        }}
-        title={expanded ? t("chat.collapseProcess") : t("chat.expandProcess")}
-      >
-        <svg width="12" height="12" viewBox="0 0 12 12" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" style={{ flexShrink: 0, transform: expanded ? "rotate(90deg)" : "none", transition: "transform 0.15s" }}>
-          <polyline points="4 2.5 7.5 6 4 9.5" />
-        </svg>
-        <span style={{ minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-          {parts.join(" · ")}
-          {cacheMissText && <span style={{ color: TRANSCRIPT_NOTICE_WARNING_COLOR }}>{` · ${cacheMissText}`}</span>}
-        </span>
-      </button>
-      {(expanded || reveal) && (
-        <div style={{ marginTop: 8 }}>
-          {children}
-        </div>
-      )}
-    </div>
-  );
 }
 
 export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, newSessionContextBar, initialNewSessionChoices, onNewSessionChoicesChange, onAgentEnd, onToolEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onContextUsageChange, onOpenFile, onFilesUploaded, onOpenSubagent, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio, holdAudio }: Props) {
@@ -1191,6 +1129,8 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
               };
 
               const rendered: ReactNode[] = [];
+              let streamingGrouped = false;
+              const processMessageProps = { toolResults: toolResultsMap, modelNames, cwd: messageCwd, onOpenFile, onOpenSubagent };
               for (let idx = 0; idx < messages.length;) {
                 const msg = messages[idx];
                 const hasAnchor = isMessageGroupAnchor(msg);
@@ -1208,18 +1148,9 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                 let endIdx = idx + 1;
                 while (endIdx < messages.length && !isMessageGroupAnchor(messages[endIdx])) endIdx += 1;
 
-                const finalAssistantIdx = findFinalAssistantIndex(messages, userIdx, endIdx);
-
-                if (finalAssistantIdx === -1) {
-                  for (let renderIdx = groupStartIdx; renderIdx < endIdx; renderIdx++) {
-                    rendered.push(renderMessage(renderIdx));
-                  }
-                  idx = endIdx;
-                  continue;
-                }
-
                 const isLiveTail = (sessionBusy || isStreaming) && endIdx === messages.length && userIdx === lastAnchorIdx;
-                if (isLiveTail) {
+                const finalAssistantIdx = findFinalAssistantIndex(messages, userIdx, endIdx);
+                if (finalAssistantIdx === -1 && !isLiveTail) {
                   for (let renderIdx = groupStartIdx; renderIdx < endIdx; renderIdx++) {
                     rendered.push(renderMessage(renderIdx));
                   }
@@ -1232,10 +1163,13 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                 // A leading segment without its anchor has no start time, and neither has the bubble a
                 // send shows at once: it carries the browser's clock, not pi's, until the reload after
                 // the run brings the session file's entry (the only kind with an entry id).
-                const turnDurationMs = hasAnchor && entryIds[userIdx] ? getTurnDurationMs(messages, userIdx, endIdx) : undefined;
+                const turnDurationMs = !isLiveTail && hasAnchor && entryIds[userIdx] ? getTurnDurationMs(messages, userIdx, endIdx) : undefined;
 
-                const finalViews = getFinalAnswerViews(finalAnswerViewCache, messages[finalAssistantIdx] as AssistantMessage);
-                const finalAnswerMessage = finalViews.answer;
+                const lastAssistant = messages[finalAssistantIdx] as AssistantMessage | undefined;
+                const hasFinishedAnswer = !isStreaming && ["stop", "error", "length", "aborted"].includes(lastAssistant?.stopReason ?? "");
+                const finalViews = lastAssistant && (!isLiveTail || hasFinishedAnswer) ? getFinalAnswerViews(finalAnswerViewCache, lastAssistant) : undefined;
+                const finalAnswerMessage = finalViews?.answer;
+                const processEndIdx = isLiveTail ? endIdx : finalAssistantIdx + 1;
 
                 const processViews: ReactNode[] = [];
                 // processViews also holds the notice lines of steps that show nothing else.
@@ -1243,8 +1177,9 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                 let processToolCount = 0;
                 let processRefIdx: number | undefined;
                 let revealProcess = false;
+                let processActivity: ProcessActivity | undefined;
 
-                for (let processIdx = userIdx + 1; processIdx <= finalAssistantIdx; processIdx++) {
+                for (let processIdx = userIdx + 1; processIdx < processEndIdx; processIdx++) {
                   const processMessage = messages[processIdx];
                   if (processMessage.role === "custom") {
                     // Not counted either: a turn whose only extra is a hidden message has no process details.
@@ -1254,8 +1189,16 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                     processViews.push(renderMessage(processIdx, { attachRef: false, keyPrefix: "process" }));
                     continue;
                   }
-                  if (processMessage.role !== "assistant") continue;
-                  const message = processIdx === finalAssistantIdx ? finalViews.process : processMessage;
+                  if (processMessage.role !== "assistant") {
+                    // Shell execution cards are not assistant tool-call carriers.
+                    if (processMessage.role !== "toolResult") {
+                      processMessageCount += 1;
+                      processViews.push(renderMessage(processIdx, { attachRef: false, keyPrefix: "process" }));
+                    }
+                    continue;
+                  }
+                  const message = processIdx === finalAssistantIdx && finalViews ? finalViews.process : processMessage;
+                  processActivity = getProcessActivity(message.content) ?? processActivity;
                   // The final message's notices go under its answer when it has one.
                   const withNotices = processIdx !== finalAssistantIdx || !finalAnswerMessage;
                   const blocks = getDisplayableAssistantBlocks(message);
@@ -1278,28 +1221,23 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                 }
 
                 // Only notice lines, from steps that show nothing else: no fold for them.
-                if (processMessageCount === 0) rendered.push(...processViews);
-                else if (processViews.length > 0) {
-                  const answered = collapsesProcessDetails(finalAnswerMessage);
-                  const processCacheMisses = summarizeCacheMisses(messages.slice(userIdx + 1, finalAnswerMessage ? finalAssistantIdx : finalAssistantIdx + 1));
+                if (processMessageCount === 0 && !isLiveTail) rendered.push(...processViews);
+                if (processMessageCount > 0 || isLiveTail) {
+                  streamingGrouped ||= isLiveTail;
+                  const processCacheMisses = summarizeCacheMisses(messages.slice(userIdx + 1, finalAnswerMessage ? finalAssistantIdx : processEndIdx));
                   rendered.push(
                     <div
                       key={`process-group-${messageKeys[groupStartIdx]}`}
                       ref={processRefIdx === undefined ? undefined : (el) => { messageRefs.current[processRefIdx] = el; }}
                     >
-                      {/* Re-key on answer availability: useState reads defaultExpanded only
-                          on mount, so a turn first rendered without an answer (expanded)
-                          would otherwise stay open once its answer shows up, e.g. when
-                          switching between an answered and an unanswered leaf of the same
-                          turn. Manual toggles survive every other re-render. */}
-                      <ProcessDetailsGroup key={answered ? "answered" : "unanswered"} messageCount={processMessageCount} toolCallCount={processToolCount} durationMs={turnDurationMs} cacheMisses={processCacheMisses} defaultExpanded={!answered} reveal={revealProcess} t={t}>
+                      <ProcessDetailsGroup messageCount={processMessageCount} toolCallCount={processToolCount} durationMs={turnDurationMs} cacheMisses={processCacheMisses} reveal={revealProcess} activity={processActivity} live={isLiveTail} pendingToolResults={activeToolResults} store={streamingStore} onCommit={updatePromptAnchor} messageProps={processMessageProps}>
                         {processViews}
                       </ProcessDetailsGroup>
                     </div>,
                   );
                 }
 
-                if (finalAnswerMessage) {
+                if (finalAnswerMessage && finalViews) {
                   // Each tool call is stored as its own assistant entry, so the
                   // final answer alone carries no record of what the turn wrote.
                   // Gather the turn's assistant blocks and derive the file list
@@ -1320,10 +1258,13 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                     recoverTruncation: endIdx === messages.length && !isStreaming && !hasAssistantAnswer(finalAnswerMessage),
                   }));
                 }
-                for (let renderIdx = finalAssistantIdx + 1; renderIdx < endIdx; renderIdx++) {
+                for (let renderIdx = processEndIdx; renderIdx < endIdx; renderIdx++) {
                   rendered.push(renderMessage(renderIdx));
                 }
                 idx = endIdx;
+              }
+              if (!streamingGrouped && isStreaming && hasStreamingContent) {
+                rendered.push(<ProcessDetailsGroup key="orphan-stream" messageCount={0} toolCallCount={0} live store={streamingStore} onCommit={updatePromptAnchor} messageProps={processMessageProps} />);
               }
               const { startIndex } = getVisibleRenderWindow(rendered.length, visibleCount);
               const hasMore = startIndex > 0 || hasEarlierMessages;
@@ -1338,10 +1279,6 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                 </>
               );
             })()}
-            {isStreaming && hasStreamingContent && (
-              <StreamingReply store={streamingStore} onCommit={updatePromptAnchor} toolResults={toolResultsMap} modelNames={modelNames} cwd={messageCwd} onOpenFile={onOpenFile} onOpenSubagent={onOpenSubagent} />
-            )}
-
             {agentRunning && !hasStreamingContent && (agentPhase || isCompacting) && (
               <div className="break-words py-2 text-[13px] text-text-muted">
                 <span className="animate-[pulse_1.5s_infinite]">{phaseLabel(agentPhase, t, isCompacting)}</span>
@@ -1528,23 +1465,6 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
     </div>
   );
 }
-
-// The reply being streamed: the one part of the chat a chunk re-renders.
-const StreamingReply = memo(function StreamingReply({ store, onCommit, toolResults, modelNames, cwd, onOpenFile, onOpenSubagent }: {
-  store: StreamingStore;
-  /** Runs after each chunk is in the DOM. */
-  onCommit: () => void;
-  toolResults: Map<string, ToolResultMessage>;
-  modelNames: Record<string, string>;
-  cwd?: string;
-  onOpenFile?: (filePath: string, page?: number) => void;
-  onOpenSubagent?: (sessionId: string, label: string) => void;
-}) {
-  const message = useStreamingSelector(store, selectStreamingMessage);
-  useLayoutEffect(onCommit, [message, onCommit]);
-  if (!message) return null;
-  return <MessageView message={message} toolResults={toolResults} isStreaming modelNames={modelNames} cwd={cwd} onOpenFile={onOpenFile} onOpenSubagent={onOpenSubagent} />;
-});
 
 // A one-line notice is exactly as tall as its entrance animation pins it, and
 // its line sits dead centre: the two 1px borders, a 21px line box (14px at
