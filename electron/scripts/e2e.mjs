@@ -97,8 +97,10 @@ try {
   assert.equal((await publicApi("/api/terminal")).status, 403);
   const localSettings = await page.evaluate(async () => (await fetch("/api/cache-miss-notices")).status);
   assert.equal(localSettings, 200);
-  assert.equal((await publicApi("/api/cache-miss-notices")).status, 403);
-  assert.equal((await publicApi("/api/models-config")).status, 403);
+  // External control exposes the audited Web settings routes (6788bc0),
+  // guarded by the same password and Host/Origin checks as other Web APIs.
+  assert.equal((await publicApi("/api/cache-miss-notices")).status, 200);
+  assert.equal((await publicApi("/api/models-config")).status, 200);
   const localRead = await page.evaluate(async () => (await fetch("/api/models-config")).status);
   assert.equal(localRead, 200);
   const privateSessions = await page.evaluate(async () => await (await fetch("/api/sessions")).json());
@@ -180,7 +182,13 @@ try {
   assert.equal(inputStatus, 200);
   await page.waitForFunction(() => [...document.querySelectorAll(".terminal-panel")].some(panel =>
     panel.getBoundingClientRect().width > 0 && panel.querySelector(".xterm-rows")?.textContent.includes("desktop-lazy-terminal-ok")), undefined, { polling: 100 });
-  console.log(JSON.stringify({ packaged, passed: true, native, screenshot: join(area, "desktop-final.png") }));
+  // End the shell this fixture created before checking the host's idle exit.
+  assert.equal(await page.evaluate(async id => (await fetch(`/api/terminal/${id}`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ type: "input", data: "exit\r" }),
+  })).status, terminal.id), 200);
+  await page.locator(".terminal-panel:visible .terminal-panel-exit").waitFor();
+  assert.equal(await page.evaluate(async id => (await fetch(`/api/terminal/${id}`, { method: "DELETE" })).status, terminal.id), 200);
+  console.log(JSON.stringify({ packaged, functionalChecksPassed: true, native, screenshot: join(area, "desktop-final.png") }));
 } catch (error) {
   const page = (await app.windows())[0];
   if (page) await page.screenshot({ path: join(area, "failure.png") }).catch(() => {});
@@ -190,16 +198,27 @@ try {
   // Opening the fixture can initialize a wrapper or leave a status probe busy.
   // Cleanup owns this disposable AgentRoot: explicitly accept stopping its work.
   // Active-work cancellation itself is covered by the dedicated lifecycle checks.
-  await app.evaluate(({ dialog }) => { dialog.showMessageBox = async () => ({ response: 0 }); }).catch(() => {});
-  await app.close();
-  if (child.exitCode === null) {
-    await Promise.race([
-      new Promise(resolve => child.once("exit", resolve)),
-      new Promise((_, reject) => setTimeout(() => reject(new Error("Electron host did not exit after app.close()")), 15_000)),
+  const exited = child.exitCode === null
+    ? new Promise(resolve => child.once("exit", resolve))
+    : Promise.resolve(child.exitCode);
+  let deadline;
+  try {
+    const quit = (async () => {
+      await app.evaluate(({ dialog }) => {
+        dialog.showMessageBox = async () => ({ response: 0 });
+      }).catch(() => {});
+      await app.close();
+      return exited;
+    })();
+    const code = await Promise.race([
+      quit,
+      new Promise((_, reject) => { deadline = setTimeout(() => reject(new Error("Electron host did not exit after Quit")), 30_000); }),
     ]);
-  }
+    assert.equal(code, 0, "the desktop host must quit cleanly");
+  } finally { clearTimeout(deadline); }
   if (privateOrigin) {
     await assert.rejects(fetch(privateOrigin));
     console.log("Host exited and owned service listener stopped.");
   }
 }
+console.log(JSON.stringify({ packaged, passed: true }));
