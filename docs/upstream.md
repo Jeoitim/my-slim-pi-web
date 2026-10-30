@@ -2,17 +2,19 @@
 
 本地与 GitHub 默认开发分支均为 `my-slim-pi-web`（2026-10-22 核对），本地 `upstream` 分支专门跟踪 `upstream/main`。原本地 `main` 已更名，避免误作最新产品线。
 
-基底为 `https://github.com/agegr/pi-web.git` 默认分支 main，基准提交 `e533d9b`，上游版本 0.12.2。2026-10-22 审查并集成 `7c0778a..e533d9b` 的六项修复：隐藏页面释放空闲事件流、worktree 短暂失败不入缓存、删除供应商时清除重命名记录、实时活跃时间、保留 models.json 符号链接和 macOS 新会话快捷键。保留完整 Git 历史、MIT LICENSE及原 CONTRIBUTING / AGENTS；通用介绍直接链接上游 README。`origin` 指向本项目公开仓库 [Jeoitim/my-slim-pi-web](https://github.com/Jeoitim/my-slim-pi-web)，`upstream` 保留原上游地址。
+基底为 `https://github.com/agegr/pi-web.git` 默认分支 main，本次集成基准为 `d128bae47cd3abbdfe7135443ac793f547c14e47` / `v0.13.0`。此前基准 `e533d9b` / 0.12.2 的六项修复于 2026-10-22 集成。保留完整 Git 历史、MIT LICENSE及原 CONTRIBUTING / AGENTS；通用介绍直接链接上游 README。`origin` 指向本项目公开仓库 [Jeoitim/my-slim-pi-web](https://github.com/Jeoitim/my-slim-pi-web)，`upstream` 保留原上游地址。
 
-本 fork 当前版本 `0.12.2-jeoitim.8`。同一上游发布版本下递增 `jeoitim` 修订号；集成新的上游发布版本后从 `.1` 开始，本次上游仍为 0.12.2，故不重置修订号。package.json / package-lock.json 同步修改。fork 不自动查询或推荐上游 npm / GitHub 应用更新，升级由本仓库维护和分发流程完成。
+本 fork 当前版本 `0.13.0-jeoitim.1`。同一上游发布版本下递增 `jeoitim` 修订号；本次集成新的上游发布版本，将修订号重置为 `.1`。package.json / package-lock.json 同步修改。fork 不自动查询或推荐上游 npm / GitHub 应用更新，升级由本仓库维护和分发流程完成。
 
 ## 同步
 
-2026-10-29 跟踪检查：已抓取并将本地纯镜像 `refs/heads/upstream` 从 `e533d9b` 快进到 `d128bae`（`v0.13.0`），共 65 个提交、207 个文件变化。开发主线的已审查上游基线仍是 `e533d9b` / 0.12.2；本次过程折叠功能没有混入上游合并。
+2026-10-30 重新抓取确认：上游最新仍为 `d128bae`（`v0.13.0`），本地纯镜像 `refs/heads/upstream` 与 `upstream/main` 一致。此次通过独立分支 `codex/integrate-upstream-0.13.0` 集成 `e533d9b..d128bae` 的 65 个提交、207 个文件变化；新的折叠样式与设置开关在集成之后单独提交。
 
-下次独立集成应重点审查：`b593cd6` 的会话空闲/lease 生命周期、`ed041ee` 及后续 Debug/SSE 页面接口的远程访问白名单、`a295025` 的压缩期消息排队与 `02eee05` 的发送失败草稿恢复、`ed3f8cb` 的子代理完成通知及 `246e625` 的等待预算；这些会碰到 fork 的扩展 liveness、权限与桌面共用后端。UI 侧还有手机 composer 浮层、统计行、代码自动换行、SVG 预览、模型图片尺寸限制和二进制下载提示。上游也已升至 Pi 1.4.0，本 fork 已提前固定同版本，但仍需检查完整精确依赖树和锁文件。此次仅完成跟踪和源码范围审查，未宣称这些上游变更已经通过 fork 兼容性验证。
+集成包含新的会话续期与 Debug/SSE 统计、压缩期消息排队、发送失败草稿恢复、子代理完成通知和等待预算，以及手机 composer 浮层、统计行、代码自动换行、SVG 预览、模型图片尺寸限制和二进制下载提示。Pi 保持本 fork 已提前固定的完整 1.4.0 精确依赖树，不重新安装另一套 SDK，也不启用独立 Web 子代理所有权。
 
-已核对两处具体接点：上游 lease 路由移除了 holder/90 秒页面租约，改为调用 wrapper 的 `renewIdleTimer()` 重置完整空闲倒计时，不能只覆盖路由而保留旧的客户端/扩展活动判断；新增的 `GET /api/agent/debug` 会匹配本 fork 现有 `agent/[^/]+` 的动态 GET 白名单，因此独立整合时必须明确审计和处理这个静态接口，不能误以为新增路由会自动被远程边界拒绝。当前代码尚无该接口，此次跟踪不改变任何远程权限。
+兼容处理：lease 路由和客户端一起采用上游的 `renewIdleTimer()` 完整空闲倒计时，同时保留扩展后台活动判断；不再创建浏览器自身的存活 provider。旧版 v1 扩展存活注册表即使没有可选的检查方法也继续复用，不清空已注册的扩展工作。已审查 `GET /api/agent/debug`：仅返回状态、计数、时间和服务名称，不返回提示词、工具参数、MCP 配置或凭据；显式加入已认证的远程 GET 清单，仍保留 Web 密码、Host/Origin 和桌面入口签名验证。Debug 面板延迟加载，保留桌面冷启动路径。Shell 检测与输入修复、权限模式、加密 Web 密码及现有折叠逻辑均保留。上游 npm 发布工作流限制为 `agegr/pi-web` 原仓库，fork 不自动发布到其 npm 通道。
+
+同时兼容当前 CLI 的 `my-slim-pi-suite` 和旧版 `timrt-suite` 目录，确保真实安装仍保有工具、审批和委派所有权。Git diff 保留上游的真实路径边界，只有 API 已检查并明确授权的外部目录链接可例外读取。验证结果与 Windows 基线失败记录见 [0.13.0 集成验证](upstream-013-validation.md)。
 
 由用户或外部维护者在源码仓库执行。下面流程不放进安装后 Agent 的提示词、技能或维护手册。
 

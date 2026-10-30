@@ -9,6 +9,7 @@ import { setTerminalTheme, useTerminalTheme } from "@/hooks/useTerminalTheme";
 import { subscribeFontPreferences } from "@/hooks/useFontPreferences";
 import { readFontWeight } from "@/lib/font-preferences";
 import { createTerminalWriter, terminalRequest } from "@/lib/terminal-client";
+import { pageId, trackEventSource } from "@/lib/page-debug";
 import {
   applyTerminalModifiers,
   NO_TERMINAL_MODIFIERS,
@@ -182,7 +183,10 @@ export function TerminalPanel({ tab, active, onRestart, onClosed, onCloseError, 
       // loopback backend can still work offline; let EventSource test the route.
       if (disposed || exited || events?.readyState === EventSource.OPEN) return;
       events?.close();
-      events = new EventSource(`/api/terminal/${encodeURIComponent(id)}/events${offset === undefined ? "" : `?after=${offset}`}`);
+      // `holder`: the page, for the Debug panel's connected pages.
+      const query = new URLSearchParams({ holder: pageId() });
+      if (offset !== undefined) query.set("after", String(offset));
+      events = trackEventSource("terminal", new EventSource(`/api/terminal/${encodeURIComponent(id)}/events?${query}`), cwd);
       events.onmessage = (message) => {
         const event = JSON.parse(message.data) as TerminalEvent;
         if (event.type === "output") {
