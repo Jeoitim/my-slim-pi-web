@@ -442,7 +442,7 @@ try {
       const olderMessage = page.locator("[data-entry-id='e4920']");
       const olderOffset = await positionForReading(olderMessage);
       await selectSession("Render **E2E markdown**", "user");
-      const process = page.getByRole("button", { name: /process details/i });
+      const process = page.getByRole("button", { name: /^process details/i });
       await process.click();
       const answerHeading = page.getByRole("heading", { name: "E2E reading position", exact: true });
       const answerOffset = await positionForReading(answerHeading);
