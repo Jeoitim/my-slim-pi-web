@@ -5,13 +5,21 @@ import { useI18n } from "@/hooks/useI18n";
 import { desktopTextTarget, performDesktopTextAction, type DesktopTextTarget } from "@/lib/desktop-context-target";
 import { SidebarMenu, type SidebarMenuItem } from "./SidebarMenu";
 
-interface Opening { x: number; y: number; target: DesktopTextTarget; style: CSSProperties }
+interface Opening { x: number; y: number; target: DesktopTextTarget; style: CSSProperties; preserveFieldFocus: boolean }
 
 export function DesktopContextMenu() {
   const { locale, t } = useI18n();
   const [opening, setOpening] = useState<Opening | null>(null);
   const [failed, setFailed] = useState(false);
   useEffect(() => {
+    // Chromium moves the caret on a secondary press in a field's blank area,
+    // before contextmenu can snapshot the selection. Keep that selection for
+    // Copy/Paste; an ordinary left click still places the caret normally.
+    const preserveFieldSelection = (event: MouseEvent) => {
+      if (event.button !== 2 || event.defaultPrevented || !(event.target instanceof HTMLElement)) return;
+      const field = event.target.closest<HTMLInputElement | HTMLTextAreaElement>("input, textarea");
+      if (field && field.selectionStart !== null && field.selectionStart !== field.selectionEnd) event.preventDefault();
+    };
     const open = (event: MouseEvent) => {
       if (event.defaultPrevented || !(event.target instanceof HTMLElement) || event.target.closest(".sidebar-menu, .sidebar-sheet")) return;
       const target = desktopTextTarget(event.target);
@@ -27,13 +35,16 @@ export function DesktopContextMenu() {
         }
       }
       setFailed(false);
-      setOpening({ x: event.clientX || rect.left + 8, y: event.clientY || rect.bottom, target, style: style as CSSProperties });
+      setOpening({ x: event.clientX || rect.left + 8, y: event.clientY || rect.bottom, target, style: style as CSSProperties,
+        preserveFieldFocus: event.button === 2 && target.element.matches("input, textarea") });
     };
     const dismiss = () => setOpening(null);
+    document.addEventListener("mousedown", preserveFieldSelection, true);
     document.addEventListener("contextmenu", open);
     window.addEventListener("blur", dismiss);
     document.addEventListener("scroll", dismiss, true);
     return () => {
+      document.removeEventListener("mousedown", preserveFieldSelection, true);
       document.removeEventListener("contextmenu", open);
       window.removeEventListener("blur", dismiss);
       document.removeEventListener("scroll", dismiss, true);
@@ -54,7 +65,8 @@ export function DesktopContextMenu() {
       sheet={false} width={188} topInset={36} ariaLabel={t("desktop.textMenu")} cancelLabel={t("i18n.close")}
       surfaceClassName="desktop-context-menu" surfaceStyle={{ ...opening?.style,
         ...(locale === "zh-CN" ? { fontFamily: '"Microsoft YaHei UI", "Microsoft YaHei", var(--font-ui)' } : {}) }}
-      items={items} returnFocusTo={opening?.target.element} onClose={() => setOpening(null)} />
+      items={items} returnFocusTo={opening?.target.element} preserveOpenerFocus={opening?.preserveFieldFocus}
+      onClose={() => setOpening(null)} />
     {failed && <div className="desktop-clipboard-error" role="alert" onClick={() => setFailed(false)}>{t("desktop.clipboardFailed")}</div>}
   </>;
 }

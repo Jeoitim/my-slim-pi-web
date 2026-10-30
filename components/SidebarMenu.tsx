@@ -127,6 +127,8 @@ export interface SidebarMenuProps {
    * the menu has closed.
    */
   returnFocusTo?: HTMLElement | null;
+  /** Text context menus keep the field's selection visibly active for pointer use. */
+  preserveOpenerFocus?: boolean;
   /** Desktop width in px. */
   width?: number;
   /**
@@ -382,6 +384,7 @@ const isolateEvents = {
 };
 
 export interface SidebarMenuSurfaceProps {
+  preserveOpenerFocus?: boolean;
   surfaceClassName?: string;
   surfaceStyle?: CSSProperties;
   sheet: boolean;
@@ -482,6 +485,7 @@ function MenuItemButton({ item, onActivate }: { item: ActionItem; onActivate: Si
  * handling `SidebarMenu` adds around it.
  */
 export function SidebarMenuSurface({
+  preserveOpenerFocus = false,
   surfaceClassName,
   surfaceStyle,
   sheet,
@@ -551,6 +555,10 @@ export function SidebarMenuSurface({
         aria-label={ariaLabel}
         style={{ width, ...surfaceStyle }}
         {...isolateEvents}
+        onMouseDown={(event) => {
+          if (preserveOpenerFocus) event.preventDefault();
+          stopReactPropagation(event);
+        }}
       >
         {body}
       </div>
@@ -594,6 +602,7 @@ export function SidebarMenu({
   focusCancel,
   onClose,
   returnFocusTo,
+  preserveOpenerFocus = false,
   width,
   classic = false,
   footer,
@@ -683,8 +692,9 @@ export function SidebarMenu({
     }
     const opening = !openedRef.current;
     openedRef.current = true;
+    if (preserveOpenerFocus && opening) return;
     (opening ? initialFocusTarget(surface) : menuBodyFocusTarget(surface))?.focus({ preventScroll: true });
-  }, [visible, sheet, custom, focusKey]);
+  }, [visible, sheet, custom, focusKey, preserveOpenerFocus]);
 
   // On close, focus returns to the opener unless the user put it elsewhere.
   // The opener is taken now, as the menu opens: the parent closes it by
@@ -731,10 +741,22 @@ export function SidebarMenu({
       const target = event.target instanceof Element ? event.target : null;
       const inside = target !== null && surface.contains(target);
       const onPage = target === null || target === document.body || target === document.documentElement;
-      if (!inside && !onPage) return;
+      const onOpener = preserveOpenerFocus && target !== null && returnFocusToRef.current?.contains(target);
+      if (!inside && !onPage && !onOpener) return;
       if (event.key === "Tab") {
         // No focus trap: Tab out of the menu closes it, and focus goes on from the opener.
         if (!inside || tabLeavesSurface(surface, target as Element, event.shiftKey)) onCloseRef.current("outside");
+        return;
+      }
+      if (onOpener && (event.ctrlKey || event.metaKey)) {
+        // Native editing shortcuts continue in the selected field.
+        onCloseRef.current("outside");
+        return;
+      }
+      if (onOpener && (event.key === "Enter" || event.key === " ")) {
+        event.preventDefault();
+        event.stopPropagation();
+        enabledItems(surface)[0]?.click();
         return;
       }
       // The filter field keeps its letters and caret keys; Up and Down go on to the items.
@@ -754,6 +776,11 @@ export function SidebarMenu({
         list[next].focus({ preventScroll: false });
         return;
       }
+      if (onOpener) {
+        // A menu must not type into or delete the draft behind it.
+        event.preventDefault();
+        event.stopPropagation();
+      }
       if (event.key.length !== 1 || event.ctrlKey || event.metaKey || event.altKey) return;
       const item = findSidebarMenuShortcut(itemsRef.current, event.key);
       if (!item || custom) return;
@@ -763,7 +790,7 @@ export function SidebarMenu({
     };
     document.addEventListener("keydown", onKeyDown, true);
     return () => document.removeEventListener("keydown", onKeyDown, true);
-  }, [visible, custom]);
+  }, [visible, custom, preserveOpenerFocus]);
 
   // A press anywhere else closes a desktop menu and goes on to whatever it was
   // on (another row is selected by the same click). The sheet's backdrop
@@ -786,6 +813,7 @@ export function SidebarMenu({
 
   return createPortal(
     <SidebarMenuSurface
+      preserveOpenerFocus={preserveOpenerFocus}
       surfaceClassName={surfaceClassName}
       surfaceStyle={surfaceStyle}
       sheet={sheet}

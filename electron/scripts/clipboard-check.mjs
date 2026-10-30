@@ -78,6 +78,50 @@ try {
     assert.ok(await page.evaluate(() => getSelection().toString().includes("Clipboard transcript fixture")));
     // The input selection survives menu focus; native paste must replace that selection.
     const input = page.locator("textarea.chat-input-textarea");
+    for (const atBlankSpace of [false, true]) {
+      await input.fill("Start 选择这段文字 finish");
+      await input.press("Home");
+      for (let i = 0; i < 6; i++) await page.keyboard.press("ArrowRight");
+      for (let i = 0; i < 6; i++) await page.keyboard.press("Shift+ArrowRight");
+      const point = await input.evaluate((element, blank) => {
+        const style = getComputedStyle(element);
+        const canvas = document.createElement("canvas");
+        const context = canvas.getContext("2d"); context.font = style.font;
+        return { x: blank ? element.clientWidth - 8 : parseFloat(style.paddingLeft) + context.measureText("Start 选择").width, y: element.clientHeight / 2 };
+      }, atBlankSpace);
+      await input.click({ button: "right", position: point });
+      await menu.waitFor();
+      const selected = await input.evaluate(element => ({ start: element.selectionStart, end: element.selectionEnd, text: element.value.slice(element.selectionStart, element.selectionEnd) }));
+      console.log(JSON.stringify({ inputRightClick: atBlankSpace ? "blank" : "selected-text", selected }));
+      await page.screenshot({ path: join(area, atBlankSpace ? "input-selection-blank.png" : "input-selection-text.png") });
+      assert.deepEqual(selected, { start: 6, end: 12, text: "选择这段文字" }, "Right-click must retain the original partial input selection");
+      assert.equal(await input.evaluate(element => document.activeElement === element), true, "Pointer menu must keep the field selection visibly active");
+      assert.notEqual(await item("复制").getAttribute("aria-disabled"), "true", "The selected input text must remain copyable");
+      await item("复制").click();
+      assert.equal(await read(), "选择这段文字");
+    }
+    await input.press("Home");
+    await input.press("Shift+ArrowRight");
+    await rightClick(input);
+    await page.keyboard.press("Backspace");
+    await page.keyboard.press("z");
+    assert.equal(await input.inputValue(), "Start 选择这段文字 finish", "Menu keys must not edit the draft");
+    await page.keyboard.press("Escape");
+    assert.equal(await input.evaluate(element => element.selectionEnd - element.selectionStart), 1, "Dismissing the menu preserves the selection");
+    await rightClick(input);
+    await page.keyboard.press("Enter");
+    assert.equal(await read(), "S", "Enter activates the menu without sending the draft");
+    assert.equal(await input.inputValue(), "Start 选择这段文字 finish");
+    await rightClick(input);
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    assert.equal(await read(), "S", "Keyboard navigation still reaches Copy");
+    await input.press("Shift+F10");
+    await menu.waitFor();
+    assert.equal(await menu.evaluate(element => element.contains(document.activeElement)), true, "Keyboard context menus take focus normally");
+    await page.keyboard.press("Escape");
+    await input.click({ position: { x: 2, y: 2 } });
+    assert.equal(await input.evaluate(element => element.selectionStart === element.selectionEnd), true, "An ordinary left click still places the caret");
     await input.fill("replace this draft");
     await input.selectText();
     await write("粘贴到输入框");
@@ -111,11 +155,15 @@ try {
     const terminal = await created.json();
     await page.locator(".terminal-panel .is-ready").waitFor();
     const host = page.locator(".terminal-xterm-host:visible");
+    await host.click();
+    await page.keyboard.type("echo TERMINAL_CLIPBOARD_SELECTION");
+    await page.keyboard.press("Enter");
+    await page.waitForFunction(() => document.querySelector(".terminal-panel .xterm-rows").textContent.includes("TERMINAL_CLIPBOARD_SELECTION"));
     await rightClick(host);
     await item("全选").click();
     await rightClick(host);
     await item("复制").click();
-    assert.ok((await read()).includes("Microsoft Windows"), "Terminal copy must use the xterm buffer selection");
+    assert.ok((await read()).includes("TERMINAL_CLIPBOARD_SELECTION"), "Terminal copy must use the xterm buffer selection independently of its shell banner");
     const command = 'cmd /v:on /c "set PROBE=terminal-context-&echo !PROBE!paste-ok"';
     await write(command);
     await rightClick(host);
