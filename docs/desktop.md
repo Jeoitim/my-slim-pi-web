@@ -93,9 +93,11 @@ Linux 使用 export / read -rsp。不要将明文密码放入源码、命令行�
 
 启动时 Node 后端与原生窗口并行初始化。窗口先显示本地 `loading.html`，仅保留居中品牌图标、产品名称标题和不确定进度条，不显示说明文字或页脚。进度条保留无障碍标签和减少动态效果时的静态回退。服务、健康检查和必要配置都就绪后自动导航到 WebUI。正常启动不显示 Retry，不执行一次多余的停止/重启；真实失败才切到错误页。健康请求使用原生 loopback HTTP，终端、文件预览、子代理预览和设置面板按需加载，不在聊天首页初始化 xterm 等可选模块。
 
-版本采用 `<上游基准版本>-jeoitim.<修订号>`，当前开发版本为 `0.13.0-jeoitim.2`。同一上游发布版本下递增修订号，完成新上游发布版本的独立集成 PR 后，基准更新并从 `.1` 开始。页面不请求上游更新接口；即使直接调用 `/api/app-update`，fork 版本也只返回本地版本，不连接 npm 上游或推荐上游安装包。此规则同时适用于本 fork 的 Web 版。
+版本采用 `<上游基准版本>-jeoitim.<修订号>`，当前开发版本为 `0.13.0-jeoitim.3`。同一上游发布版本下递增修订号，完成新上游发布版本的独立集成 PR 后，基准更新并从 `.1` 开始。页面不请求上游更新接口；即使直接调用 `/api/app-update`，fork 版本也只返回本地版本，不连接 npm 上游或推荐上游安装包。此规则同时适用于本 fork 的 Web 版。
 
 首版无自动更新器。退出应用后安装新版本；卸载保留 userData，安装不覆盖 AgentRoot、凭据、模型、技能和会话。回退用此前验证的安装包并保留用户目录。不要用上游 pi-web 自动更新覆盖 fork。首版安装包未签名，发布签名与可信下载另行处理。
+
+Windows 安装器通过 electron-builder 的 `customCheckAppRunning` 钩子检查进程：仅匹配目标目录的主程序，以及该目录 `resources/` 内的后端和辅助程序，并排除安装器自身。安装器、卸载器、相邻目录和其他位置的同名应用不算本次安装的运行实例。使用系统 PowerShell、禁用用户 profile，目录作为独立参数传入。检查失败单独提示重试；发现实际运行实例后，交互安装仍需确认关闭，静默安装则取消并返回非零状态，不自动停止任务。检测与停止均按路径限定，停止前复核 PID、路径和创建时间。见 [安装器验证](desktop-installer-validation.md)。
 
 上游维护遵循 [AGENTS.md](../AGENTS.md)：`upstream` 纯跟踪 → 独立集成 PR → `my-slim-pi-web`。重点接点是 page/layout、DesktopShell/DesktopSettings、SettingsPanel、settings-navigation、remote-access 和 next.config；不复制 rpc-manager 或权限系统。
 
@@ -109,6 +111,6 @@ Linux 使用 export / read -rsp。不要将明文密码放入源码、命令行�
 
 `npm run test:desktop:app` 验证开发窗口；`npm run test:desktop:packaged` 验证 Windows 运行目录。设置 `PI_DESKTOP_E2E_EXECUTABLE` 可验证实际安装位置；全部使用 `.local` 隔离 AgentRoot 和 userData。`npm run test:desktop:startup-loading` 验证启动页先于 WebUI 出现并自动交接；`npm run test:desktop:lifecycle` 用阻塞扩展命令验证关闭提示、后台继续和退出后后端终止。`node electron/scripts/crash-check.mjs` 验证强制退出及恢复。实际记录见 [desktop-validation.md](desktop-validation.md)。
 
-安装、卸载和应用回归必须串行执行。NSIS 安装器会关闭正在运行的同名应用，即使该实例来自另一个测试目录，也会中断 Electron 回归。
+安装、卸载和目标目录的应用回归必须串行执行，避免安装过程变更正在验收的程序文件。`pwsh -NoProfile -File electron/scripts/installer-process-check.ps1` 使用自建进程检查目标目录匹配、后台停止和无关进程保留；加 `-NsisDirectory <NSIS工具根目录>` 实际编译并运行隔离安装/卸载钩子，不写产品注册表或快捷方式。
 
 `node electron/scripts/startup-check.mjs` 测量打包应用三次独立空用户目录启动，记录进程拉起到 React 控件就绪的耗时，并断言正常启动没有 Retry 导航、没有上游检查请求、没有重复的全屏图标。`--baseline` 可记录旧产物；不要在测量间替换同一个运行目录。`node electron/scripts/startup-failure-check.mjs` 模拟缺失 Node，检查真实失败仍显示可见、可重试的错误窗口。两项启动检查都必须经过新的 loading 页。

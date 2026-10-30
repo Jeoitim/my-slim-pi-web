@@ -34,6 +34,7 @@ await build({
     directories: { app: ".", output: join(root, "dist-desktop"), buildResources: join(root, ".desktop/icons") },
     extraResources: configuration.extraResources.map(resource => ({ ...resource, from: join(root, resource.from) })),
     win: { ...configuration.win, icon: join(root, configuration.win.icon) },
+    nsis: { ...configuration.nsis, include: join(root, configuration.nsis.include) },
     linux: { ...configuration.linux, icon: join(root, configuration.linux.icon) },
   },
 });
