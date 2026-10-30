@@ -1,6 +1,6 @@
 {
   "name": "my-slim-pi-web",
-  "version": "0.12.2-jeoitim.9",
+  "version": "0.13.0-jeoitim.1",
   "description": "My Slim Pi 的 WebUI 最简实现",
   "license": "MIT",
   "engines": {
