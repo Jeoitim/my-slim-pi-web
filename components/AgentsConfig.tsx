@@ -115,6 +115,7 @@ function profileModelBase(reference: string, isListed: (reference: string) => bo
 }
 
 function profileKey(profile: Pick<SubagentProfile, "scope" | "name">): string {
+  if ("kind" in profile && profile.kind === "hermes") return "background:hermes";
   return `${profile.scope}:${profile.name}`;
 }
 
@@ -179,6 +180,8 @@ export function AgentsConfig({
   const isMobile = useIsMobile();
   const { t } = useI18n();
   const [profiles, setProfiles] = useState<SubagentProfile[]>([]);
+  const [runtime, setRuntime] = useState<SubagentProfilesResponse["runtime"]>(undefined);
+  const managed = runtime === "my-slim-pi";
   const [modelOptions, setModelOptions] = useState<ModelsData["modelList"]>([]);
   const [modelsLoading, setModelsLoading] = useState(true);
   const [modelsError, setModelsError] = useState<string | null>(null);
@@ -213,11 +216,12 @@ export function AgentsConfig({
     setLoading(true);
     setError(null);
     try {
-      const response = await fetch(`/api/subagents/profiles?cwd=${encodeURIComponent(cwd)}`, { cache: "no-store" });
+      const response = await fetch(`/api/subagents/profiles${cwd ? `?cwd=${encodeURIComponent(cwd)}` : ""}`, { cache: "no-store" });
       const data = await response.json() as Partial<SubagentProfilesResponse> & { error?: string };
       if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
       const next = data.profiles ?? [];
       setProfiles(next);
+      setRuntime(data.runtime ?? "pi-web");
       const rememberedKey = preferredKey ?? getLastSettingsSelection("agents", cwd);
       const chosen = next.find((profile) => profileKey(profile) === rememberedKey)
         ?? next.find((profile) => profile.scope === "project")
@@ -242,6 +246,7 @@ export function AgentsConfig({
   }, [loadProfiles]);
 
   useEffect(() => {
+    if (runtime !== "pi-web") return;
     const controller = new AbortController();
     setSettingsLoading(true);
     setSettingsError(null);
@@ -265,7 +270,7 @@ export function AgentsConfig({
       }
     })();
     return () => controller.abort();
-  }, []);
+  }, [runtime]);
 
   useEffect(() => {
     if (selectedKey) setLastSettingsSelection("agents", selectedKey, cwd);
@@ -283,7 +288,7 @@ export function AgentsConfig({
     setModelsError(null);
     void (async () => {
       try {
-        const response = await fetch(`/api/models?cwd=${encodeURIComponent(cwd)}`, { signal: controller.signal });
+        const response = await fetch(`/api/models${cwd ? `?cwd=${encodeURIComponent(cwd)}` : ""}`, { signal: controller.signal });
         const data = await response.json() as Partial<ModelsData> & { error?: string };
         if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
         setModelOptions(data.modelList ?? []);
@@ -336,10 +341,11 @@ export function AgentsConfig({
     setError(null);
     setSavedOk(false);
     try {
-      const response = await fetch("/api/subagents/profiles", {
+      const hermes = selected?.kind === "hermes" && mode !== "create";
+      const response = await fetch(hermes ? "/api/my-slim-pi/background-models" : "/api/subagents/profiles", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ cwd, scope: targetScope, profile: draft }),
+        body: JSON.stringify(hermes ? { model: draft.model || null } : { cwd, scope: targetScope, profile: draft }),
       });
       const data = await response.json() as { profile?: SubagentProfile; error?: string };
       if (!response.ok || data.error || !data.profile) throw new Error(data.error ?? `HTTP ${response.status}`);
@@ -376,6 +382,7 @@ export function AgentsConfig({
 
   const editing = mode !== "view";
   const creating = mode === "create";
+  const hermes = selected?.kind === "hermes" && !creating;
   const disabled = !editing || saving || toggling;
   const displayedScope = creating ? targetScope : selected?.scope;
   const displayedPath = creating
@@ -487,8 +494,9 @@ export function AgentsConfig({
   };
 
   return (
-    <ConfigPanelShell embedded={embedded} title={t("common.agents")} subtitle={shortenPath(cwd)} closeLabel={t("agents.close")} onClose={onClose}>
-      <div className="agents-feature-setting">
+    <ConfigPanelShell embedded={embedded} title={t("common.agents")} subtitle={cwd ? shortenPath(cwd) : undefined} closeLabel={t("agents.close")} onClose={onClose}>
+      {managed && <p className="settings-general-description">{t("agents.cliManagedDescription")}</p>}
+      {runtime === "pi-web" && <div className="agents-feature-setting">
         <div className="agents-feature-copy">
           <strong>{t("agents.builtInTitle")}</strong>
           <span>{t("agents.builtInDescription")}</span>
@@ -521,7 +529,7 @@ export function AgentsConfig({
             onChange={(enabled) => void toggleBuiltInSubagents(enabled)}
           />
         </div>
-      </div>
+      </div>}
       <ConfigSplitView>
         <ConfigSidebar>
           <ConfigSidebarList>
@@ -541,7 +549,7 @@ export function AgentsConfig({
                           active={selectedKey === profileKey(profile) && !creating}
                           onClick={() => selectProfile(profile)}
                         >
-                          <ConfigStatusDot active={profile.enabled} />
+                          {!managed && <ConfigStatusDot active={profile.enabled} />}
                           <ConfigSidebarText className={`is-grow${profile.enabled ? "" : " is-muted"}`}>{profile.displayName}</ConfigSidebarText>
                           {overridden && <span className="agents-overridden-label">{t("agents.overridden")}</span>}
                         </ConfigSidebarItem>
@@ -575,7 +583,7 @@ export function AgentsConfig({
                           options={(["global", "project"] as const).map((scope) => ({
                             value: scope,
                             label: t(`agents.scope.${scope}`),
-                            disabled: saving,
+                            disabled: saving || (scope === "project" && !cwd),
                           }))}
                           path={displayedPath}
                           onChange={setTargetScope}
@@ -592,13 +600,15 @@ export function AgentsConfig({
                       )}
                     </ConfigDetailHeaderInfo>
                     <ConfigDetailActions>
-                      {selected && (mode === "view" || mode === "edit") && <ConfigButton size="small" onClick={beginDuplicate} disabled={saving || toggling}>{t("agents.duplicate")}</ConfigButton>}
-                      {selected && isWritableScope(selected.scope) && mode === "edit" && <ConfigButton variant="danger" size="small" onClick={() => void remove()} disabled={saving || toggling}>{t("agents.delete")}</ConfigButton>}
-                      <ConfigSwitch checked={draft.enabled} disabled={switchDisabled} label={draft.enabled ? t("agents.disable") : t("agents.enable")} onChange={(checked) => void toggleEnabled(checked)} />
+                      {!hermes && selected && (mode === "view" || mode === "edit") && <ConfigButton size="small" onClick={beginDuplicate} disabled={saving || toggling}>{t("agents.duplicate")}</ConfigButton>}
+                      {!hermes && selected && isWritableScope(selected.scope) && mode === "edit" && <ConfigButton variant="danger" size="small" onClick={() => void remove()} disabled={saving || toggling}>{t("agents.delete")}</ConfigButton>}
+                      {!hermes && !managed && <ConfigSwitch checked={draft.enabled} disabled={switchDisabled} label={draft.enabled ? t("agents.disable") : t("agents.enable")} onChange={(checked) => void toggleEnabled(checked)} />}
                     </ConfigDetailActions>
                   </ConfigDetailHeader>
 
-                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) minmax(0, 1fr)", gap: 12 }}>
+                  {managed && selected?.scope === "builtin" && <p className="settings-general-description">{t("agents.cliBuiltinReadOnly")}</p>}
+                  {hermes && <p className="settings-general-description">{t("agents.hermesDescription")}</p>}
+                  {!hermes && <><div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) minmax(0, 1fr)", gap: 12 }}>
                     <Field label={t("agents.name")}>
                       {creating ? (
                         <input aria-label={t("agents.name")} value={draft.name} disabled={disabled} onChange={(event) => update("name", event.target.value)} style={inputStyle} />
@@ -608,9 +618,9 @@ export function AgentsConfig({
                         </code>
                       )}
                     </Field>
-                    <Field label={t("agents.displayName")}>
+                    {!managed && <Field label={t("agents.displayName")}>
                       <input aria-label={t("agents.displayName")} value={draft.displayName} disabled={disabled} onChange={(event) => update("displayName", event.target.value)} style={controlStyle} />
-                    </Field>
+                    </Field>}
                   </div>
                   <Field label={t("agents.description")}>
                     <input aria-label={t("agents.description")} value={draft.description} disabled={disabled} onChange={(event) => update("description", event.target.value)} style={controlStyle} />
@@ -619,20 +629,20 @@ export function AgentsConfig({
                     <textarea className="agents-system-prompt" aria-label={t("agents.prompt")} value={draft.systemPrompt} disabled={disabled} onChange={(event) => update("systemPrompt", event.target.value)} style={{ ...controlStyle, height: 195, minHeight: 195, maxHeight: "60vh", padding: 9, overflow: "auto", resize: disabled ? "none" : "vertical", lineHeight: 1.5 }} />
                   </Field>
 
-                  <Field label={t("agents.tools")}>
+                  {(!managed || creating) && <Field label={t("agents.tools")}>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 16px" }}>
                       {TOOL_OPTIONS.map((tool) => (
                         <Toggle key={tool} label={tool} disabled={disabled} checked={draft.tools.includes(tool)} onChange={(checked) => update("tools", checked ? [...draft.tools, tool] : draft.tools.filter((item) => item !== tool))} />
                       ))}
                     </div>
-                  </Field>
+                  </Field>}
 
-                  <Field label={t("agents.resources")}>
+                  {!managed && <Field label={t("agents.resources")}>
                     <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 20px" }}>
                       <Toggle label={t("agents.loadSkills")} disabled={disabled} checked={draft.loadSkills} onChange={(checked) => update("loadSkills", checked)} />
                       <Toggle label={t("agents.loadExtensions")} disabled={disabled} checked={draft.loadExtensions} onChange={(checked) => update("loadExtensions", checked)} />
                       {/* A chat-only child cannot start with MCP on; the switch still turns it off. */}
-                      <Toggle label={t("agents.mcp")} disabled={disabled || (chatOnlyDraft && draft.mcp !== "on")} checked={draft.mcp === "on"} onChange={(checked) => update("mcp", checked ? "on" : "off")} />
+                      {!managed && <Toggle label={t("agents.mcp")} disabled={disabled || (chatOnlyDraft && draft.mcp !== "on")} checked={draft.mcp === "on"} onChange={(checked) => update("mcp", checked ? "on" : "off")} />}
                     </div>
                     {/* `skills:` and `extensions:` lists are edited in the profile file; show what they load. */}
                     {draft.loadSkills && draft.skills !== undefined && (
@@ -649,7 +659,7 @@ export function AgentsConfig({
                           : t("agents.extensionsNone")}
                       </span>
                     )}
-                    {!disabled && chatOnlyDraft ? (
+                    {!managed && (!disabled && chatOnlyDraft ? (
                       <span style={{ color: "var(--text-dim)", fontSize: 11, lineHeight: 1.4 }}>
                         {t("agents.mcpChatOnly")}
                       </span>
@@ -657,10 +667,10 @@ export function AgentsConfig({
                       <span style={{ color: "var(--text-dim)", fontSize: 11, lineHeight: 1.4 }}>
                         {t("agents.mcpHint")}
                       </span>
-                    )}
-                  </Field>
+                    ))}
+                  </Field>}
 
-                  <Field label={t("agents.codemode")}>
+                  {!managed && <Field label={t("agents.codemode")}>
                     <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
                       <select
                         aria-label={t("agents.codemode")}
@@ -677,9 +687,9 @@ export function AgentsConfig({
                         {t("agents.codemodeHint")}
                       </span>
                     </div>
-                  </Field>
+                  </Field>}</>}
 
-                  <div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1.5fr) minmax(120px, 0.75fr) minmax(100px, 0.5fr)", gap: 12 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: isMobile || hermes ? "1fr" : "minmax(0, 1.5fr) minmax(120px, 0.75fr) minmax(100px, 0.5fr)", gap: 12 }}>
                     <Field label={t("agents.model")}>
                       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                         <ModelSelector
@@ -699,20 +709,24 @@ export function AgentsConfig({
                         {modelsError && <span style={{ color: "#ef4444", fontSize: 10 }}>{modelsError}</span>}
                       </div>
                     </Field>
-                    <Field label={t("agents.thinking")}>
+                    {!hermes && <Field label={t("agents.thinking")}>
                       <select aria-label={t("agents.thinking")} value={draft.thinking ?? ""} disabled={disabled} onChange={(event) => update("thinking", (event.target.value || undefined) as EditableProfile["thinking"])} style={controlStyle}>
                         {THINKING_OPTIONS.map((value) => <option key={value || "default"} value={value}>{value || t("agents.inherit")}</option>)}
                       </select>
-                    </Field>
-                    <Field label={t("agents.maxTurns")}>
+                    </Field>}
+                    {!hermes && !managed && <Field label={t("agents.maxTurns")}>
                       <input aria-label={t("agents.maxTurns")} type="number" min={1} value={draft.maxTurns ?? ""} disabled={disabled} onChange={(event) => update("maxTurns", event.target.value ? Number(event.target.value) : undefined)} style={controlStyle} />
-                    </Field>
+                    </Field>}
                   </div>
 
-                  <div style={{ display: "flex", flexWrap: "wrap", gap: "10px 20px" }}>
+                  {!hermes && !managed && <div style={{ display: "flex", flexWrap: "wrap", gap: "10px 20px" }}>
                     <Toggle label={t("agents.inheritContext")} disabled={disabled} checked={draft.inheritContext} onChange={(checked) => update("inheritContext", checked)} />
                     <Toggle label={t("agents.background")} disabled={disabled} checked={draft.runInBackground} onChange={(checked) => update("runInBackground", checked)} />
-                  </div>
+                  </div>}
+                  {managed && !hermes && !creating && selected?.configuration && <details className="config-field">
+                    <summary>{t("agents.configuration")}</summary>
+                    <pre style={{ whiteSpace: "pre-wrap", overflowWrap: "anywhere", maxHeight: 240, overflow: "auto", fontSize: 12 }}>{selected.configuration}</pre>
+                  </details>}
                 </ConfigDetailStack>
               )}
           </ConfigDetailStack>

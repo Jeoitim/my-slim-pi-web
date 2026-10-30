@@ -341,13 +341,13 @@ test("profiles route toggles a built-in through settings.json without writing a 
   assert.deepEqual(await response.json(), { error: "Agent profile not found" });
 });
 
-test("profiles route rejects missing paths, malformed profiles, and unsafe names", async (t) => {
+test("profiles route allows global access without a project and rejects malformed profiles and unsafe names", async (t) => {
   const cwd = await mkdtemp(join(tmpdir(), "pi-web-subagent-route-"));
   allowFileRoot(cwd);
   t.after(() => rm(cwd, { recursive: true, force: true }));
 
   let response = await GET(new Request("http://localhost/api/subagents/profiles"));
-  assert.equal(response.status, 400);
+  assert.equal(response.status, 200);
 
   response = await PUT(jsonRequest("PUT", { cwd, scope: "project" }));
   assert.equal(response.status, 400);

@@ -4,7 +4,7 @@
 
 基底为 `https://github.com/agegr/pi-web.git` 默认分支 main，本次集成基准为 `d128bae47cd3abbdfe7135443ac793f547c14e47` / `v0.13.0`。此前基准 `e533d9b` / 0.12.2 的六项修复于 2026-10-22 集成。保留完整 Git 历史、MIT LICENSE及原 CONTRIBUTING / AGENTS；通用介绍直接链接上游 README。`origin` 指向本项目公开仓库 [Jeoitim/my-slim-pi-web](https://github.com/Jeoitim/my-slim-pi-web)，`upstream` 保留原上游地址。
 
-本 fork 当前版本 `0.13.0-jeoitim.1`。同一上游发布版本下递增 `jeoitim` 修订号；本次集成新的上游发布版本，将修订号重置为 `.1`。package.json / package-lock.json 同步修改。fork 不自动查询或推荐上游 npm / GitHub 应用更新，升级由本仓库维护和分发流程完成。
+本 fork 当前开发版本 `0.13.0-jeoitim.2`。同一上游发布版本下递增 `jeoitim` 修订号；`0.13.0-jeoitim.1` 集成新的上游发布版本时将修订号重置为 `.1`。package.json / package-lock.json 同步修改。fork 不自动查询或推荐上游 npm / GitHub 应用更新，升级由本仓库维护和分发流程完成。
 
 ## 同步
 

@@ -11,17 +11,20 @@ import {
   type SubagentWritableScope,
 } from "@/lib/subagents";
 import { writeDisabledBuiltInSubagent } from "@/lib/subagent-settings";
+import { listMySlimPiProfiles } from "@/lib/my-slim-pi-agents";
 
 export const dynamic = "force-dynamic";
 
 async function validateCwd(cwd: unknown): Promise<string> {
+  if (cwd === null || cwd === undefined || cwd === "") return slimAgentDir();
   if (typeof cwd !== "string" || !cwd || !existsSync(cwd)) throw new Error("Valid cwd required");
   if (!isExistingFilePathAllowed(cwd, await getAllowedFileRoots())) throw new Error("Access denied");
   return cwd;
 }
 
-function validateScope(scope: unknown): SubagentWritableScope {
+function validateScope(scope: unknown, cwd?: unknown): SubagentWritableScope {
   if (scope !== "global" && scope !== "project") throw new Error("scope must be global or project");
+  if (scope === "project" && !cwd) throw new Error("A project is required for project profiles");
   return scope;
 }
 
@@ -35,7 +38,8 @@ function validateToggleScope(scope: unknown): SubagentWritableScope | "builtin" 
 export async function GET(req: Request) {
   try {
     const cwd = await validateCwd(new URL(req.url).searchParams.get("cwd"));
-    return NextResponse.json({ profiles: listSubagentProfileSources(cwd) });
+    const managed = isMySlimPiAgent(slimAgentDir());
+    return NextResponse.json({ profiles: managed ? listMySlimPiProfiles(cwd) : listSubagentProfileSources(cwd), runtime: managed ? "my-slim-pi" : "pi-web" });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: message }, { status: message === "Access denied" ? 403 : 400 });
@@ -43,7 +47,6 @@ export async function GET(req: Request) {
 }
 
 export async function PUT(req: Request) {
-  if (isMySlimPiAgent(slimAgentDir())) return NextResponse.json({error:"My Slim Pi owns this configuration; use Settings › My Slim Pi"}, {status:403});
   try {
     const body = await req.json() as {
       cwd?: unknown;
@@ -51,11 +54,13 @@ export async function PUT(req: Request) {
       profile?: Omit<SubagentProfile, "scope" | "filePath">;
     };
     const cwd = await validateCwd(body.cwd);
-    const scope = validateScope(body.scope);
+    const scope = validateScope(body.scope, body.cwd);
     if (!body.profile || typeof body.profile.name !== "string") {
       return NextResponse.json({ error: "profile required" }, { status: 400 });
     }
-    return NextResponse.json({ profile: saveSubagentProfile(cwd, scope, body.profile) });
+    const managed = isMySlimPiAgent(slimAgentDir());
+    const source = managed ? listMySlimPiProfiles(cwd).find(profile => profile.kind !== "hermes" && profile.scope === scope && profile.name.toLowerCase() === body.profile!.name.toLowerCase()) : undefined;
+    return NextResponse.json({ profile: saveSubagentProfile(cwd, scope, body.profile, { preserveUnchanged: managed, ...(source?.filePath ? { filePath: source.filePath } : {}) }) });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: message }, { status: message === "Access denied" ? 403 : 400 });
@@ -63,15 +68,16 @@ export async function PUT(req: Request) {
 }
 
 export async function PATCH(req: Request) {
-  if (isMySlimPiAgent(slimAgentDir())) return NextResponse.json({error:"My Slim Pi owns this configuration; use Settings › My Slim Pi"}, {status:403});
+  if (isMySlimPiAgent(slimAgentDir())) return NextResponse.json({ error: "Profile activation is managed by My Slim Pi" }, { status: 403 });
   try {
     const body = await req.json() as { cwd?: unknown; scope?: unknown; name?: unknown; enabled?: unknown };
     const cwd = await validateCwd(body.cwd);
     const scope = validateToggleScope(body.scope);
+    if (scope === "project" && !body.cwd) throw new Error("A project is required for project profiles");
     if (typeof body.name !== "string") return NextResponse.json({ error: "name required" }, { status: 400 });
     if (typeof body.enabled !== "boolean") return NextResponse.json({ error: "enabled required" }, { status: 400 });
     const name = body.name;
-    const source = listSubagentProfileSources(cwd).find((profile) =>
+    const source = (isMySlimPiAgent(slimAgentDir()) ? listMySlimPiProfiles(cwd) : listSubagentProfileSources(cwd)).find((profile) =>
       profile.scope === scope && profile.name.toLowerCase() === name.toLowerCase()
     );
     if (!source) return NextResponse.json({ error: "Agent profile not found" }, { status: 404 });
@@ -104,7 +110,7 @@ export async function PATCH(req: Request) {
       persistSession: source.persistSession,
       enabled: source.enabled,
     };
-    return NextResponse.json({ profile: saveSubagentProfile(cwd, scope, { ...profile, enabled: body.enabled }) });
+    return NextResponse.json({ profile: saveSubagentProfile(cwd, scope, { ...profile, enabled: body.enabled }, { preserveUnchanged: isMySlimPiAgent(slimAgentDir()) }) });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
     return NextResponse.json({ error: message }, { status: message === "Access denied" ? 403 : 400 });
@@ -112,13 +118,14 @@ export async function PATCH(req: Request) {
 }
 
 export async function DELETE(req: Request) {
-  if (isMySlimPiAgent(slimAgentDir())) return NextResponse.json({error:"My Slim Pi owns this configuration; use Settings › My Slim Pi"}, {status:403});
   try {
     const body = await req.json() as { cwd?: unknown; scope?: unknown; name?: unknown };
     const cwd = await validateCwd(body.cwd);
-    const scope = validateScope(body.scope);
+    const scope = validateScope(body.scope, body.cwd);
     if (typeof body.name !== "string") return NextResponse.json({ error: "name required" }, { status: 400 });
-    deleteSubagentProfile(cwd, scope, body.name);
+    const name = body.name;
+    const source = isMySlimPiAgent(slimAgentDir()) ? listMySlimPiProfiles(cwd).find(profile => profile.kind !== "hermes" && profile.scope === scope && profile.name.toLowerCase() === name.toLowerCase()) : undefined;
+    deleteSubagentProfile(cwd, scope, name, source?.filePath);
     return NextResponse.json({ ok: true });
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

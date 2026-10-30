@@ -63,6 +63,13 @@ async function models(cwd) {
   return { status: response.status, body: await response.json() };
 }
 
+test("global model settings work without a project or session", async () => {
+  const response = await GET(new Request("http://localhost/api/models", { headers: { host: "localhost" } }));
+  assert.equal(response.status, 200);
+  const data = await response.json();
+  assert.ok(data.modelList.some(model => model.provider === "acme" && model.id === "one"));
+});
+
 test("a removed worktree is listed from the repo it branched from", async () => {
   // A finished subagent run: its worktree is gone, its session still names it as the cwd.
   const removed = join(`${repo}-worktrees`, "pi-web-agent-abc");

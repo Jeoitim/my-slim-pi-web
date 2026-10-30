@@ -41,14 +41,16 @@ pi-cc 在 session_start 安排一次零延时 write renderer 注册。受管理�
 
 ## 专属设置与 Agent 配套改动
 
-“设置 → My Slim Pi”读取实际 Agent 安装中的 `extensions/pi-permission-suite/config.json`。人工审批开关对应现有字段 `reviewer.humanFallback`：开启为 `ask`，关闭为 `pause`。Web 只做带锁的单字段原子编辑，保留其他规则；不建立 Web 专用的权限配置。旧扩展尚未更新并构建时禁用开关。
+“设置 → 常规 → 权限审批”读取实际 Agent 安装中的 `extensions/pi-permission-suite/config.json`。人工审批开关对应现有字段 `reviewer.humanFallback`：开启为 `ask`，关闭为 `pause`。Web 只做带锁的单字段原子编辑，保留其他规则；不建立 Web 专用的权限配置。旧扩展尚未更新并构建时禁用开关。
 
 Agent 每次评估读取这个偏好。AUTO/ACT 的自动判断仍照常运行；需要人工兜底时，关闭状态立即拒绝，不发审批提醒、不创建弹窗或 90 秒定时器。已打开的审批不被设置变动偷偷回答。ASK 的 `timeout:0` 始终保留逐次无限等待。CLI 也可用 `/approval-fallback on|off` 调整同一项。
 
 策略 seal 仅把这一枚交互偏好视为可变状态，和原有模型选择一样；其他权限规则仍纳入校验，整个配置路径仍受工具写入保护。设置损坏或出现未知值时不启用人工兜底，不产生默认批准。关闭导致删除审批未通过时，仍保留原清理暂停规则。
 
-后台模型按钮通过经过注册命令与空闲检查的 `open_my_slim_pi_settings` 适配，调用原 `/subagents` 设置页，选择审批/Hermes 模型。模型列表、供应商、保存方式及任务代理授权均由原扩展处理。
+“设置 → 子代理”恢复上游原生编辑页，直接选择审批子代理或 Hermes 后台总结模型，使用现有模型选择器，无需先打开对话。子代理的描述、提示词、模型和思考级别保存到 CLI 的原有定义文件；只改模型时保留其他 frontmatter 和原提示词正文。CLI 运行选项只在页内“配置详情”中查看，不套用 Web 的资源和开关语义。
 
-Web 的 Shell、内置子代理、插件安装及 Code mode 工具组合控件不适用于受管理安装，已隐藏或替换；相关写接口对受管理安装返回 403。保留有效的模型、技能、原生 MCP 和界面设置。原生 MCP 管理不意味着免除 Agent 的工具审批。Windows 使用 PowerShell，Linux 使用 Bash。
+Hermes 的模型保存到原 `hermes-memory-config.json`，清除时按 CLI 规则移除模型覆盖和回退列表。保存后通过原 `timrt:hermes-model` 事件通知运行中的受管理会话，下一次总结生效；新会话直接读取文件。设置页不再调用终端菜单，不创建会话、不向对话打印详情。旧 `open_my_slim_pi_settings` 命令会明确拒绝并提示使用设置页。
+
+Web 的 Shell、内置子代理运行时、代理启用开关、插件安装及 Code mode 工具组合控件不适用于受管理安装，已隐藏或替换；这些写接口继续返回 403。子代理定义文件仅开放上述共享字段的编辑，以及用户/项目定义的创建和删除；CLI 自带定义只读。保留有效的模型、技能、原生 MCP 和界面设置。原生 MCP 管理不意味着免除 Agent 的工具审批。Windows 使用 PowerShell，Linux 使用 Bash。
 
 配套补丁包含稳定状态投影、以上交互偏好、CLI 入口、策略 seal 的单字段例外与针对性测试，另刷新 distribution.json 已有文件哈希。通过原维护构建器在各自仓库 `.local/` 的 Windows/Linux 独立 AgentRoot 验证。用户真实运行目录未部署；应用时继续使用原受管理更新、备份、构建与重载流程。

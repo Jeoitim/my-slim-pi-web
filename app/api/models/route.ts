@@ -103,7 +103,10 @@ const EMPTY_MODELS: ModelsData = {
 };
 
 export async function GET(req: Request) {
-  const requestedCwd = resolve(new URL(req.url).searchParams.get("cwd") || process.cwd());
+  const projectCwd = new URL(req.url).searchParams.get("cwd");
+  // Settings can edit global models without creating a chat/project. Never use
+  // the packaged server's working directory as that implicit project.
+  const requestedCwd = resolve(projectCwd || getAgentDir());
   // A subagent run isolated in a worktree has that worktree removed when the run
   // finishes, yet its session file still records the worktree as its cwd. Fall back
   // to the main repo it branched from, so opening a finished subagent resolves the
@@ -124,8 +127,7 @@ export async function GET(req: Request) {
   if (!cwdStat.isDirectory()) {
     return Response.json({ error: `Not a directory: ${cwd}` }, { status: 400 });
   }
-  const allowedRoots = await getAllowedFileRoots();
-  if (!isExistingFilePathAllowed(cwd, allowedRoots)) {
+  if (projectCwd && !isExistingFilePathAllowed(cwd, await getAllowedFileRoots())) {
     return Response.json({ error: "Access denied" }, { status: 403 });
   }
 

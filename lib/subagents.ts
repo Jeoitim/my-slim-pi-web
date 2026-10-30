@@ -3,6 +3,7 @@ import { getAgentDir, type LoadExtensionsResult } from "@earendil-works/pi-codin
 import { dump as stringifyYaml } from "js-yaml";
 import { existsSync, mkdirSync, readdirSync, readFileSync, unlinkSync } from "fs";
 import { basename, dirname, join, resolve } from "path";
+import { isDeepStrictEqual } from "node:util";
 import { parseFrontmatter } from "./frontmatter";
 import { parseNpmSource } from "./npm-source";
 import { writePrivateFileAtomicSync } from "./atomic-file";
@@ -23,6 +24,10 @@ export type SubagentScope = "builtin" | "global" | "workspace" | "project";
 export type SubagentWritableScope = Extract<SubagentScope, "global" | "project">;
 
 export interface SubagentProfile {
+  /** A background service shown in the shared editor, not a dispatchable agent. */
+  kind?: "hermes";
+  /** Read-only CLI frontmatter; its runtime options do not use the Web schema. */
+  configuration?: string;
   name: string;
   displayName: string;
   description: string;
@@ -377,7 +382,7 @@ function syncFlagAlias(
     || (typeof storedValue === "string" && OWNED_ALIAS_VALUES.has(storedValue.trim().toLowerCase()));
   if (owned) frontmatter[alias] = flag;
 }
-function parseProfileFile(filePath: string, scope: SubagentScope): SubagentProfile | null {
+export function parseProfileFile(filePath: string, scope: SubagentScope): SubagentProfile | null {
   try {
     const source = readFileSync(filePath, "utf8");
     const { data, rest } = parseFrontmatter(source);
@@ -475,8 +480,8 @@ function builtInProfiles(): SubagentProfile[] {
 }
 
 /** Every configured source, including profiles shadowed by a higher-precedence scope. */
-export function listSubagentProfileSources(cwd: string): SubagentProfile[] {
-  const profiles = builtInProfiles();
+export function listSubagentProfileSources(cwd: string, builtins = builtInProfiles()): SubagentProfile[] {
+  const profiles = [...builtins];
   for (const [dir, scope] of profileDirectories(cwd)) {
     profiles.push(...readProfileDirectory(dir, scope, cwd));
   }
@@ -530,6 +535,7 @@ export function saveSubagentProfile(
   cwd: string,
   scope: SubagentWritableScope,
   profile: Omit<SubagentProfile, "scope" | "filePath">,
+  options: { preserveUnchanged?: boolean; filePath?: string } = {},
 ): SubagentProfile {
   const name = assertProfileName(profile.name);
   const tools = [...new Set(profile.tools.filter((tool) => BUILTIN_TOOLS.has(tool)))];
@@ -557,7 +563,8 @@ export function saveSubagentProfile(
   if (scope === "project" && !isProjectProfilePathAllowed(cwd, dir)) {
     throw new Error("Agent profile directory is outside the project root");
   }
-  const filePath = join(dir, `${name}.md`);
+  const filePath = options.filePath ?? join(dir, `${name}.md`);
+  if (dirname(resolve(filePath)) !== resolve(dir) || !filePath.endsWith(".md")) throw new Error("Invalid agent profile path");
   const stored = readStoredFrontmatter(filePath);
   const mcp = requestedMcp ?? parseMcp(stored.mcp);
   const managed: Record<string, unknown> = {
@@ -597,8 +604,37 @@ export function saveSubagentProfile(
   for (const [key, value] of Object.entries(unmanagedFrontmatter(stored))) {
     if (!(key in frontmatter)) frontmatter[key] = value;
   }
+  let body = `\n${systemPrompt}\n`;
+  if (options.preserveUnchanged && existsSync(filePath)) {
+    if (typeof stored.name !== "string" || !stored.name.trim() || typeof stored.description !== "string" || !stored.description.trim()) throw new Error("Invalid CLI agent definition");
+    const previous = parseProfileFile(filePath, scope);
+    if (!previous) throw new Error("Invalid agent profile");
+    // The CLI owns implicit defaults and foreign fields. A model-only save must
+    // not turn absent resource flags into explicit false values, or rewrite tools.
+    const fields = {
+      description: "description", display_name: "displayName", tools: "tools",
+      load_skills: "loadSkills", skills: "loadSkills", load_extensions: "loadExtensions", extensions: "loadExtensions",
+      codemode: "codemode", mcp: "mcp", enabled: "enabled", inherit_context: "inheritContext",
+      run_in_background: "runInBackground", model: "model", thinking: "thinking", max_turns: "maxTurns",
+      prompt_mode: "promptMode", color: "color", isolation: "isolation", persist_session: "persistSession",
+    } as const;
+    for (const [key, field] of Object.entries(fields)) {
+      if (!["description", "model", "thinking"].includes(field) || isDeepStrictEqual(profile[field], previous[field])) {
+        if (stored[key] === undefined) delete frontmatter[key];
+        else frontmatter[key] = stored[key];
+      }
+    }
+    if (previous.systemPrompt === systemPrompt) body = parseFrontmatter(readFileSync(filePath, "utf8")).rest;
+  }
+  if (options.preserveUnchanged && !existsSync(filePath)) {
+    // A new CLI agent uses CLI defaults rather than Web-only resource flags.
+    for (const key of Object.keys(frontmatter)) if (!["description", "tools", "model", "thinking"].includes(key)) delete frontmatter[key];
+    frontmatter.name = name;
+    frontmatter.tools = tools.join(", ");
+  }
   const yaml = stringifyYaml(frontmatter, { noRefs: true, lineWidth: 1000 }).trimEnd();
-  writePrivateFileAtomicSync(filePath, `---\n${yaml}\n---\n\n${systemPrompt}\n`);
+  writePrivateFileAtomicSync(filePath, `---\n${yaml}\n---\n${body}`);
+  if (options.preserveUnchanged) return parseProfileFile(filePath, scope)!;
   return {
     ...profile,
     name,
@@ -624,9 +660,11 @@ export function saveSubagentProfile(
   };
 }
 
-export function deleteSubagentProfile(cwd: string, scope: SubagentWritableScope, name: string): void {
+export function deleteSubagentProfile(cwd: string, scope: SubagentWritableScope, name: string, sourceFilePath?: string): void {
   const safeName = assertProfileName(name);
-  const filePath = join(assertWritableProfileDirectory(cwd, scope), `${safeName}.md`);
+  const dir = assertWritableProfileDirectory(cwd, scope);
+  const filePath = sourceFilePath ?? join(dir, `${safeName}.md`);
+  if (dirname(resolve(filePath)) !== resolve(dir) || !filePath.endsWith(".md")) throw new Error("Invalid agent profile path");
   if (existsSync(filePath)) unlinkSync(filePath);
 }
 

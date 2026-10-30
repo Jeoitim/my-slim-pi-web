@@ -30,7 +30,8 @@ import {
 import { ModelsConfig } from "./ModelsConfig";
 import { setupPushSubscription } from "@/lib/push-client";
 import { SkillsConfig } from "./SkillsConfig";
-import { MySlimPiSettings } from "./MySlimPiSettings";
+import { MySlimPiApprovalSettings } from "./MySlimPiApprovalSettings";
+import { AgentsConfig } from "./AgentsConfig";
 import { McpConfig } from "./McpConfig";
 import { ConfigButton, ConfigSwitch } from "./SettingsUi";
 import { FontSettings } from "./FontSettings";
@@ -327,6 +328,8 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
         {cacheMissNoticesError && <p role="alert" className="settings-general-error">{cacheMissNoticesError}</p>}
       </section>
 
+      <MySlimPiApprovalSettings />
+
       <section className="settings-general-section">
         <h3 className="settings-general-heading">{t("settings.sidebar")}</h3>
         <div className="settings-chat-options">
@@ -454,7 +457,7 @@ export function SettingsPanel({
     { id: "general", label: t("settings.general") },
     { id: "models", label: t("common.models") },
     { id: "skills", label: t("common.skills") },
-    { id: "agents", label: "My Slim Pi" },
+    { id: "agents", label: t("common.agents") },
     { id: "mcp", label: t("settings.mcp") },
     ...(desktop ? [{ id: "desktop" as const, label: t("desktop.title") }] : []),
   ] as const).map((item) => ({ ...item, requiresProject: settingsSectionRequiresProject(item.id) }));
@@ -554,7 +557,7 @@ export function SettingsPanel({
           {/* Visited sections stay mounted, so the ones whose answer depends on trust take the page's
               status and load again in place when trusting from Settings › MCP changes it. */}
           {cwd && sectionHost("skills", <SkillsConfig embedded key={cwd} cwd={cwd} trust={projectTrust} onClose={onClose} />)}
-          {sectionHost("agents", <MySlimPiSettings sessionId={sessionId} onClose={onClose} />)}
+          {sectionHost("agents", <AgentsConfig embedded key={cwd ?? ""} cwd={cwd ?? ""} sessionId={sessionId} trust={projectTrust} onClose={onClose} onReloaded={onSessionReloaded} />)}
           {/* No project needed: the global mcp.json is listed alone, and a project adds its group. */}
           {sectionHost("mcp", <McpConfig embedded key={cwd ?? ""} cwd={cwd} trust={projectTrust} onTrustProject={onOpenTrustDialog} onProjectTrustChanged={onProjectTrustChanged} onClose={onClose} />)}
         </main>

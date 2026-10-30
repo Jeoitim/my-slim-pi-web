@@ -4,6 +4,7 @@ import type { SubagentProfile } from "./subagents";
 
 export interface SubagentProfilesResponse {
   profiles: SubagentProfile[];
+  runtime?: "pi-web" | "my-slim-pi";
 }
 
 export interface SubagentSettingsResponse {

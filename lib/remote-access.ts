@@ -28,6 +28,7 @@ export function isRemoteRequest(request: Request, environment: NodeJS.ProcessEnv
 // this list explicit so a newly added API is reviewed before public exposure.
 // Native DesktopSettings use IPC and are intentionally absent from this map.
 const REMOTE_API_ROUTES: ReadonlyArray<readonly [RegExp, string]> = [
+  [/^\/api\/my-slim-pi\/background-models$/, "PUT"],
   [/^\/api\/(?:app-update|auth\/providers|cache-miss-notices|cwd\/browse|file-index|git\/(?:status|diff)|home|mcp|models|models-config|models-config\/catalog|models\/enabled|my-slim-pi\/settings|plugins|project-trust|push\/config|skills|skills\/content|subagents\/profiles|subagents\/settings|tools\/settings|web-auth|worktrees)$/, "GET"],
   // Debug is read-only state/counts/timestamps, without prompts, tool inputs or
   // credentials; it retains the same authenticated ingress as other Web APIs.

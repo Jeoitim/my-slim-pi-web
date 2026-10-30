@@ -1,4 +1,5 @@
 import { isMySlimPiAgent } from "./my-slim-pi";
+import { mySlimPiSettingsBridge } from "./my-slim-pi-agents";
 import { isPermissionMode, permissionModeFromStatuses } from "./permission-mode";
 import type { ThinkingLevel } from "@earendil-works/pi-agent-core";
 import { createAgentSessionFromServices, createAgentSessionServices, getAgentDir, initTheme, SessionManager, SettingsManager, Theme, type ModelRuntime } from "@earendil-works/pi-coding-agent";
@@ -1620,20 +1621,8 @@ export class AgentSessionWrapper {
         return { commands };
       }
 
-      case "open_my_slim_pi_settings": {
-        if (!this.managedAgent || !this.extensionCommandCandidates().some(item => item.name === "subagents")) {
-          throw new Error("My Slim Pi background-model settings are unavailable");
-        }
-        if (this.isRunning()) throw new Error("Cannot open settings while the session is busy");
-        // Keep admission until the last Agent dialog closes. Dispatch returns so
-        // the settings panel can close and reveal the ordinary Extension UI.
-        const release = await this.acquirePromptAdmission();
-        if (this.isRunning()) { release(); throw new Error("Cannot open settings while the session is busy"); }
-        void this.inner.prompt("/subagents", {source:"rpc"}).catch(error => {
-          this.emit({type:"extension_ui_request", method:"notify", message:String(error), notifyType:"error"});
-        }).finally(release);
-        return null;
-      }
+      case "open_my_slim_pi_settings":
+        throw new Error("Use Settings › Sub-agents to manage background models");
 
       case "set_permission_mode": {
         if (!isPermissionMode(command.mode)) throw new Error("Invalid permission mode");
@@ -3255,6 +3244,7 @@ export async function startRpcSession(
         : {
             extensionFactories: [
               ...(builtins?.extensions ?? []),
+              ...(managedAgent ? [mySlimPiSettingsBridge] : []),
               ...(!managedAgent ? [createReadOnlyMcpPolicyExtension()] : []),
               createProjectCommandBashExtension({
                 cwd: sessionCwd,
