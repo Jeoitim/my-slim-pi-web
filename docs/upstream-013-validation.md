@@ -16,3 +16,5 @@
 全套运行 3,213 项：3,176 通过、24 跳过、13 失败。随后修复唯一新增的 Windows junction 回归并通过专门测试。其余 12 个失败均在原基线 `2a330cc` 的独立 worktree 中重现，涉及 POSIX 文件模式/只读目录、HOME 与 USERPROFILE 显示路径、shell 环境变量与平台分隔符假设。没有把这些失败记为通过，也没有为本次集成修改其无关实现。
 
 日志位于忽略的 `.local/upstream-013-*.log`；临时 AgentRoot 为 `.local/upstream013-agent`。Linux 未在此 Windows 环境本地运行，独立 PR 的 Linux CI 结果应与上述本机结果分开查看。
+
+Linux CI：PR #2 的 [checks 与 e2e](https://github.com/Jeoitim/my-slim-pi-web/actions/runs/41002878806) 和 [build](https://github.com/Jeoitim/my-slim-pi-web/actions/runs/41002878834) 全部通过。首轮 e2e 发现旧定位规则同时匹配组头与预览按钮，已将匹配限定为组头开头后重跑通过。PR 已以 merge commit `3139b83` 合入 `my-slim-pi-web`，保留完整上游历史。

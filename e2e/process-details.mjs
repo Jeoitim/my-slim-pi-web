@@ -87,29 +87,60 @@ try {
     const toggle = page.getByRole("button", { name: /^Process details/ });
     await toggle.waitFor();
     assert.equal(await toggle.getAttribute("aria-expanded"), "false");
-    await page.locator(".process-activity").filter({ hasText: "Newest thought" }).waitFor();
+    const preview = page.locator(".process-activity-scroll");
+    await preview.locator("[data-thinking-card]").filter({ hasText: "Newest thought" }).waitFor();
     assert.equal(await page.locator(".process-details-body").count(), 0);
-    send({ type: "message_update", assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta: "\nLatest streamed thought" } });
-    await page.locator(".process-activity").filter({ hasText: "Latest streamed thought" }).waitFor();
+    send({ type: "message_update", assistantMessageEvent: { type: "thinking_delta", contentIndex: 0, delta: "\nLatest streamed thought · 最新思考" } });
+    await preview.locator("[data-thinking-card]").filter({ hasText: "Latest streamed thought · 最新思考" }).waitFor();
+    const cdp = await context.newCDPSession(page);
+    await cdp.send("DOM.enable");
+    await cdp.send("CSS.enable");
+    const { root: documentRoot } = await cdp.send("DOM.getDocument");
+    const { nodeId } = await cdp.send("DOM.querySelector", { nodeId: documentRoot.nodeId, selector: ".process-activity-scroll [data-thinking-card] button span" });
+    const { fonts } = await cdp.send("CSS.getPlatformFontsForNode", { nodeId });
+    await writeFile(join(artifacts, `fonts-${viewport.width}.json`), JSON.stringify(fonts, null, 2));
+    assert.ok(fonts.some(font => /YaHei|Noto.*(?:SC|CJK)/i.test(font.familyName)), "Chinese preview uses an installed Simplified Chinese font");
+    await cdp.detach();
+    await writeFile(join(artifacts, `folded-thinking-${viewport.width}.html`), await page.evaluate(() => {
+      const css = Array.from(document.styleSheets).flatMap(sheet => { try { return Array.from(sheet.cssRules, rule => rule.cssText); } catch { return []; } }).join("\n");
+      return `<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><style>${css}</style></head><body>${document.querySelector(".process-details-group").outerHTML}</body></html>`;
+    }));
     await page.screenshot({ path: join(artifacts, `folded-thinking-${viewport.width}.png`) });
 
     const call = { type: "toolCall", id: "call-1", name: "bash", arguments: { command: "echo latest-tool" } };
-    message = { ...message, content: [{ type: "thinking", thinking: "First thought\nNewest thought\nLatest streamed thought" }, call], stopReason: "toolUse" };
+    message = { ...message, content: [{ type: "thinking", thinking: "First thought\nNewest thought\nLatest streamed thought · 最新思考" }, call], stopReason: "toolUse" };
     send({ type: "message_update", assistantMessageEvent: { type: "toolcall_end", contentIndex: 1, toolCall: call } });
-    await page.locator(".process-activity").filter({ hasText: "⋯ bash · echo latest-tool" }).waitFor();
+    await preview.locator("[data-tool-card]").filter({ hasText: "echo latest-tool" }).waitFor();
     await complete(message);
     send({ type: "tool_execution_start", toolCallId: "call-1", toolName: "bash" });
     send({ type: "tool_execution_update", toolCallId: "call-1", toolName: "bash", partialResult: { content: [{ type: "text", text: "partial output" }] } });
-    await page.locator(".process-activity").filter({ hasText: "⋯ bash" }).waitFor();
+    assert.equal(await preview.getByText("partial output", { exact: true }).count(), 0);
     await complete({ role: "toolResult", toolCallId: "call-1", toolName: "bash", content: [{ type: "text", text: "Tool result output" }], isError: false });
     send({ type: "tool_execution_end", toolCallId: "call-1", toolName: "bash" });
-    await page.locator(".process-activity").filter({ hasText: "✓ bash" }).waitFor();
+    await preview.locator("[data-tool-card]").filter({ hasText: "echo latest-tool" }).waitFor();
+    assert.equal(await preview.getByText("Tool result output", { exact: true }).count(), 0);
     await page.screenshot({ path: join(artifacts, `folded-tool-${viewport.width}.png`) });
 
-    await page.locator(".process-activity").click();
-    assert.equal(await toggle.getAttribute("aria-expanded"), "true");
-    // New completed steps must remain inside the same manually opened group.
     for (let i = 0; i < 24; i++) await complete({ ...assistant([{ type: "text", text: `Process step ${i}: retained details` }]), stopReason: "toolUse" });
+    await preview.getByText("Process step 23: retained details", { exact: true }).waitFor();
+    const foldedSize = await preview.evaluate(element => ({ height: element.clientHeight, scroll: element.scrollHeight, row: element.lastElementChild.getBoundingClientRect().height, top: element.scrollTop }));
+    assert.ok(foldedSize.scroll > foldedSize.height * 3, "Fold has actual scroll history");
+    assert.ok(Math.abs(foldedSize.height - foldedSize.row) <= 1, "Only one original row is visible");
+    assert.ok(foldedSize.top > 0, "Latest row is brought into view");
+    await preview.evaluate(element => { element.scrollTop = 0; });
+    await page.waitForTimeout(100);
+    await complete({ ...assistant([{ type: "thinking", thinking: "Newest reasoning after scrolling" }]), stopReason: "toolUse" });
+    await preview.getByText("Newest reasoning after scrolling", { exact: true }).waitFor({ state: "attached" });
+    assert.equal(await preview.evaluate(element => element.scrollTop), 0, "New activity must not pull a reader away from older rows");
+    await preview.focus();
+    await page.keyboard.press("End");
+    await page.waitForFunction(() => {
+      const element = document.querySelector(".process-activity-scroll");
+      return element.scrollHeight - element.clientHeight - element.scrollTop < 2;
+    });
+    await page.screenshot({ path: join(artifacts, `folded-scroll-${viewport.width}.png`) });
+    await preview.getByRole("button", { name: /Newest reasoning after scrolling/ }).click();
+    assert.equal(await toggle.getAttribute("aria-expanded"), "true");
     const body = page.locator(".process-details-body");
     await body.getByText("Process step 23: retained details", { exact: true }).waitFor();
     assert.equal(await toggle.getAttribute("aria-expanded"), "true");
@@ -135,11 +166,34 @@ try {
     assert.equal(await toggle.getAttribute("aria-expanded"), "true", "Completion must preserve manual expansion");
     await toggle.click();
     assert.equal(await body.count(), 0);
+    assert.equal(await preview.count(), 0, "Completed turns hide the activity row");
     await page.reload();
     await page.getByText("Visible streamed final answer", { exact: true }).waitFor();
     assert.equal(await toggle.getAttribute("aria-expanded"), "false", "Reloaded history defaults to folded");
     assert.equal(await body.count(), 0);
+    assert.equal(await preview.count(), 0);
     assert.ok(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth));
+
+    const chooseFolding = async enabled => {
+      const sidebar = page.getByRole("button", { name: "Show sidebar", exact: true });
+      if (await sidebar.isVisible()) await sidebar.click();
+      await page.getByRole("button", { name: "Settings", exact: true }).click();
+      const setting = page.getByRole("switch", { name: "Fold process details by default", exact: true });
+      await setting.waitFor();
+      if ((await setting.getAttribute("aria-checked")) !== String(enabled)) await setting.click();
+      assert.equal(await setting.getAttribute("aria-checked"), String(enabled));
+      await page.locator(".settings-dialog-close").click();
+      const hideSidebar = page.getByRole("button", { name: "Hide sidebar", exact: true });
+      if (viewport.width <= 640 && await hideSidebar.isVisible()) await hideSidebar.click();
+    };
+    await chooseFolding(false);
+    await page.getByText("Process step 23: retained details", { exact: true }).waitFor();
+    assert.equal(await page.locator(".process-details-group, .process-details-body, .process-activity-scroll").count(), 0);
+    assert.equal(await page.evaluate(() => localStorage.getItem("pi-web:fold-process-details")), "false");
+    await page.reload();
+    await page.getByText("Process step 23: retained details", { exact: true }).waitFor();
+    assert.equal(await page.locator(".process-details-group").count(), 0, "Off preference survives reload");
+    await page.screenshot({ path: join(artifacts, `unfolded-original-${viewport.width}.png`) });
 
     // An unsuccessful turn must keep the provider failure outside its folded process.
     busy = true;
@@ -147,6 +201,9 @@ try {
     await complete({ role: "user", content: "Error fixture", timestamp: Date.now() });
     await complete({ ...assistant([{ type: "text", text: "Intermediate progress before failed tool" }]), stopReason: "toolUse" });
     await complete({ ...assistant([{ type: "thinking", thinking: "Error turn reasoning" }]), stopReason: "toolUse" });
+    await page.getByText("Intermediate progress before failed tool", { exact: true }).waitFor();
+    assert.equal(await page.locator(".process-details-group").count(), 0, "Live process is flat while off");
+    await chooseFolding(true);
     await complete({ ...assistant([]), stopReason: "error", errorMessage: "Fixture provider failure" });
     await page.getByText("Fixture provider failure", { exact: false }).waitFor();
     assert.equal(await page.getByText("Intermediate progress before failed tool", { exact: true }).count(), 0);
@@ -156,7 +213,7 @@ try {
     await page.getByRole("button", { name: "Stop agent", exact: true }).waitFor({ state: "hidden" });
     await page.getByText("Fixture provider failure", { exact: false }).waitFor();
     assert.deepEqual(errors, []);
-    console.log(`PASS ${viewport.width}px: immediate folding, latest thought/tool, partial status, click expansion, height/keyboard scroll, streamed answer, completion, reload and visible provider errors`);
+    console.log(`PASS ${viewport.width}px: original cards, one-row scroll history, reader position, bounded expansion, final answer, completion hides preview, setting off restores flat history/live display, persistence and provider errors`);
     await context.close();
     activeResponse = undefined;
   }

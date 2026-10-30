@@ -1,29 +1,28 @@
 "use client";
 
-import { useId, useLayoutEffect, useState, type ComponentProps, type ReactNode } from "react";
+import { useCallback, useId, useLayoutEffect, useRef, useState, type ComponentProps, type ReactNode } from "react";
 import { selectStreamingMessage, useStreamingSelector } from "@/hooks/useStreamingSelector";
 import { useI18n } from "@/hooks/useI18n";
 import { countToolCallBlocks, splitFinalAssistantBlocks } from "@/lib/message-display";
-import { getProcessActivity, type ProcessActivity } from "@/lib/process-activity";
-import { mcpToolLabel } from "@/lib/mcp-tool-display";
+import { getProcessActivities, PROCESS_ACTIVITY_LIMIT, type ProcessActivity } from "@/lib/process-activity";
 import { createStreamingStore, type StreamingStore } from "@/lib/streaming-message";
 import type { CacheMissSummary } from "@/lib/transcript-notices";
 import { formatTurnDuration } from "@/lib/turn-duration";
-import { MessageView } from "./MessageView";
+import { MessageView, ProcessActivityView } from "./MessageView";
 import { cacheMissSummaryText, TRANSCRIPT_NOTICE_WARNING_COLOR } from "./TranscriptNotices";
 
 const idleStore = createStreamingStore();
 type MessageProps = Pick<ComponentProps<typeof MessageView>, "toolResults" | "modelNames" | "cwd" | "onOpenFile" | "onOpenSubagent">;
 
-export function ProcessDetailsGroup({ messageCount, toolCallCount, durationMs, cacheMisses, reveal = false, activity, live = false, pendingToolResults, store, onCommit, messageProps, children }: {
+export function ProcessDetailsGroup({ messageCount, toolCallCount, durationMs, cacheMisses, reveal = false, activities = [], live = false, folded = true, store, onCommit, messageProps, children }: {
   messageCount: number;
   toolCallCount: number;
   durationMs?: number;
   cacheMisses?: CacheMissSummary;
   reveal?: boolean;
-  activity?: ProcessActivity;
+  activities?: ProcessActivity[];
   live?: boolean;
-  pendingToolResults?: ReadonlyMap<string, unknown>;
+  folded?: boolean;
   store: StreamingStore;
   onCommit?: () => void;
   messageProps: MessageProps;
@@ -31,35 +30,49 @@ export function ProcessDetailsGroup({ messageCount, toolCallCount, durationMs, c
 }) {
   const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
+  const previewRef = useRef<HTMLDivElement>(null);
+  const followLatest = useRef(true);
+  const expand = useCallback(() => setExpanded(true), []);
   const bodyId = useId();
   // Only this turn subscribes to chunks. History and the composer stay still.
   const selectedMessage = useStreamingSelector(live ? store : idleStore, selectStreamingMessage);
   const streaming = live ? selectedMessage : null;
   useLayoutEffect(() => { if (reveal) setExpanded(true); }, [reveal]);
-  useLayoutEffect(() => { if (live) onCommit?.(); }, [streaming, live, expanded, onCommit]);
+  useLayoutEffect(() => { if (live) onCommit?.(); }, [streaming, live, expanded, folded, onCommit]);
 
   const split = streaming ? splitFinalAssistantBlocks(streaming, { isStreaming: true }) : undefined;
   const streamProcess = split && streaming ? { ...streaming, content: streaming.content.slice(0, split.answerBlocks.length ? streaming.content.indexOf(split.answerBlocks[0]) : undefined) } : undefined;
   const streamHasProcess = Boolean(split?.processBlocks.length);
   const count = messageCount + (streamHasProcess ? 1 : 0);
   const tools = toolCallCount + countToolCallBlocks(split?.processBlocks ?? []);
-  const latest = (streamProcess && getProcessActivity(streamProcess.content)) || activity;
+  const previews = live && folded ? [...activities, ...(streamProcess ? getProcessActivities(streamProcess.content) : [])].slice(-PROCESS_ACTIVITY_LIMIT) : [];
   const open = expanded || reveal;
   const parts = [`${count} ${t(count === 1 ? "chat.message" : "chat.messages")}`];
   if (tools > 0) parts.push(`${tools} ${t(tools === 1 ? "chat.toolCall" : "chat.toolCalls")}`);
   if (durationMs !== undefined) parts.push(t("chat.turnDuration", { time: formatTurnDuration(durationMs) }));
   const cacheMissText = cacheMisses && !open ? cacheMissSummaryText(t, cacheMisses) : undefined;
-  let preview = latest?.text ?? "";
-  if (latest?.type === "toolCall") {
-    const result = messageProps.toolResults?.get(latest.call.toolCallId);
-    const label = mcpToolLabel(latest.call.toolName, result?.details);
-    const name = label ? `${label.server}/${label.tool}` : latest.call.toolName;
-    const pending = pendingToolResults?.has(latest.call.toolCallId);
-    const status = pending ? "⋯" : result ? (result.isError ? "✕" : "✓") : (live ? "⋯" : "·");
-    preview = `${status} ${name}${preview ? ` · ${preview}` : ""}`;
-  } else if (latest?.type === "thinking") {
-    preview = `${t("chat.thinking")}${preview ? ` · ${preview}` : ""}`;
-  }
+
+  useLayoutEffect(() => { followLatest.current = true; }, [open, folded]);
+  // Show exactly the latest original card header, including the user's font
+  // size. The preceding headers form a real scrollable history, not a fake rail.
+  useLayoutEffect(() => {
+    const viewport = previewRef.current;
+    const lastRow = viewport?.lastElementChild;
+    if (!viewport || !lastRow) return;
+    const measure = () => {
+      viewport.style.height = `${lastRow.getBoundingClientRect().height}px`;
+      if (followLatest.current) viewport.scrollTop = viewport.scrollHeight;
+    };
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(lastRow);
+    return () => observer.disconnect();
+  }, [streaming, activities, live, open, folded]);
+
+  const streamedProcess = streamHasProcess && streamProcess && <MessageView {...messageProps} message={streamProcess} isStreaming />;
+  const streamedAnswer = streaming && split && split.answerBlocks.length > 0 && <MessageView {...messageProps} message={{ ...streaming, content: split.answerBlocks }} isStreaming />;
+
+  if (!folded) return <>{children}{streamedProcess}{streamedAnswer}</>;
 
   return <>
     {count === 0 && children}
@@ -73,14 +86,22 @@ export function ProcessDetailsGroup({ messageCount, toolCallCount, durationMs, c
           {parts.join(" · ")}{cacheMissText && <span style={{ color: TRANSCRIPT_NOTICE_WARNING_COLOR }}>{` · ${cacheMissText}`}</span>}
         </span>
       </button>
-      {!open && preview && <button type="button" className="process-activity" onClick={() => setExpanded(true)} title={preview} aria-label={`${t("chat.expandProcess")} · ${preview}`}
-        style={{ display: "block", maxWidth: "100%", minWidth: 0, padding: "2px 0 2px 20px", border: "none", background: "transparent", color: "var(--text-dim)", cursor: "pointer", fontSize: 12, textAlign: "left", whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{preview}</button>}
-      {open && <div id={bodyId} role="region" aria-label={t("chat.processDetails")} tabIndex={0} className="process-details-body scrollbar-subtle"
+      {!open && previews.length > 0 && <div ref={previewRef} className="process-activity-scroll" role="region" tabIndex={0}
+        aria-label={t("chat.processActivityHistory")} title={t("chat.processActivityHistory")}
+        onScroll={event => {
+          const element = event.currentTarget;
+          followLatest.current = element.scrollHeight - element.clientHeight - element.scrollTop < 2;
+        }}>
+        {previews.map((activity, index) => <div className="process-activity-row" key={activity.type === "toolCall" ? activity.call.toolCallId : index}>
+          <ProcessActivityView activity={activity} result={activity.type === "toolCall" ? messageProps.toolResults?.get(activity.call.toolCallId) : undefined} onExpand={expand} />
+        </div>)}
+      </div>}
+      {open && <div id={bodyId} role="region" aria-label={t("chat.processDetails")} tabIndex={0} className="process-details-body"
         style={{ marginTop: 8, minWidth: 0, maxHeight: "min(420px, calc(var(--app-viewport-height, 100dvh) * 0.5))", overflowY: "auto", overflowX: "hidden", overscrollBehavior: "contain", scrollbarGutter: "stable" }}>
         {children}
-        {streamHasProcess && streamProcess && <MessageView {...messageProps} message={streamProcess} isStreaming />}
+        {streamedProcess}
       </div>}
     </div>}
-    {streaming && split && split.answerBlocks.length > 0 && <MessageView {...messageProps} message={{ ...streaming, content: split.answerBlocks }} isStreaming />}
+    {streamedAnswer}
   </>;
 }

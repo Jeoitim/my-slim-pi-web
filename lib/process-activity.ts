@@ -4,6 +4,18 @@ export type ProcessActivity =
   | { type: "thinking" | "text"; text: string }
   | { type: "toolCall"; call: ToolCallContent; text: string };
 
+export const PROCESS_ACTIVITY_LIMIT = 32;
+
+/** A bounded set of original card headers for the folded scroll viewport. */
+export function getProcessActivities(blocks: AssistantContentBlock[]): ProcessActivity[] {
+  const activities: ProcessActivity[] = [];
+  for (let i = blocks.length - 1; i >= 0 && activities.length < PROCESS_ACTIVITY_LIMIT; i--) {
+    const activity = getProcessActivity([blocks[i]]);
+    if (activity) activities.push(activity);
+  }
+  return activities.reverse();
+}
+
 /** Read only a bounded tail: looping reasoning can grow to megabytes. */
 function latestLine(text: string): string {
   const tail = text.slice(-1000).trimEnd();

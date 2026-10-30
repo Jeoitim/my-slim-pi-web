@@ -14,11 +14,12 @@ function render(props = {}) {
     React.createElement(ProcessDetailsGroup, { messageCount: 2, toolCallCount: 1, store: createStreamingStore(), messageProps: {}, ...props }, "hidden full process")));
 }
 
-test("history and unfinished turns start folded; search reveals a bounded region", () => {
+test("only running folds preview activity; completed history keeps just the header", () => {
   for (const live of [false, true]) {
-    const html = render({ live, activity: { type: "thinking", text: "latest thought" } });
+    const html = render({ live, activities: [{ type: "thinking", text: "latest thought" }] });
     assert.match(html, /aria-expanded="false"/);
-    assert.match(html, /latest thought/);
+    assert.equal(html.includes("latest thought"), live);
+    assert.equal(html.includes("data-thinking-card"), live);
     assert.doesNotMatch(html, /hidden full process/);
   }
   const html = render({ reveal: true });
@@ -44,8 +45,10 @@ test("streaming thinking and tools fold immediately while answer text stays visi
   const call = { type: "toolCall", toolCallId: "r", toolName: "read", input: { path: "fixture.txt" } };
   snapshot([thought, call]);
   html = render({ store, live: true });
-  assert.match(html, /⋯ read · fixture.txt/);
-  assert.doesNotMatch(html, /Newest thought/);
+  assert.match(html, /data-tool-card/);
+  assert.match(html, /fixture.txt/);
+  assert.match(html, /data-thinking-card/);
+  assert.doesNotMatch(html, /Old thought/);
   snapshot([thought, { type: "text", text: "Visible final answer" }]);
   html = render({ store, live: true });
   assert.match(html, /Visible final answer/);
@@ -56,10 +59,34 @@ test("streaming thinking and tools fold immediately while answer text stays visi
   assert.doesNotMatch(html, /aria-expanded/);
 });
 
-test("latest tool status uses its actual result and MCP display names", () => {
+test("preview reuses original tool styling, result duration and MCP names without output or images", () => {
   const call = { type: "toolCall", toolName: "mcp__opaque__id", toolCallId: "r", input: {} };
-  const html = render({ activity: { type: "toolCall", call, text: "query" }, messageProps: { toolResults: new Map([["r", { isError: true, details: { server: "docs.v2", tool: "search.pages" } }]]) } });
-  assert.match(html, /✕ docs.v2\/search.pages · query/);
-  const pending = render({ live: true, activity: { type: "toolCall", call, text: "query" }, pendingToolResults: new Map([["r", {}]]), messageProps: { toolResults: new Map([["r", { content: [] }]]) } });
-  assert.match(pending, /⋯ mcp__opaque__id · query/);
+  const html = render({ live: true, activities: [{ type: "toolCall", call, text: "query" }], messageProps: { toolResults: new Map([["r", { isError: true, durationMs: 1200, content: [{ type: "text", text: "hidden output" }, { type: "image", source: { type: "url", url: "https://example.invalid/hidden-image.png" } }], details: { server: "docs.v2", tool: "search.pages" } }]]) } });
+  assert.match(html, /data-tool-card/);
+  assert.match(html, /docs.v2\//);
+  assert.match(html, /search.pages/);
+  assert.match(html, /1.2s/);
+  assert.match(html, /rgba\(248,113,113,0.45\)/);
+  assert.doesNotMatch(html, /hidden output|hidden-image/);
+});
+
+test("disabling folding restores the flat process and streaming answer without any group height cap", () => {
+  const store = createStreamingStore();
+  store.dispatch({ type: "snapshot", message: { role: "assistant", content: [{ type: "thinking", thinking: "Full current reasoning" }, { type: "text", text: "Current final answer" }] } });
+  const html = render({ folded: false, live: true, store });
+  assert.match(html, /hidden full process/);
+  assert.match(html, /Full current reasoning/);
+  assert.match(html, /Current final answer/);
+  assert.doesNotMatch(html, /process-details-(?:group|body)|process-activity-scroll|max-height:|overflow-y:/);
+});
+
+test("folded preview retains only a bounded scroll history and does not serialize tool payloads", () => {
+  const activities = Array.from({ length: 80 }, (_, i) => ({ type: "thinking", text: `Thought ${i}` }));
+  const call = { type: "toolCall", toolName: "write", toolCallId: "write", input: { path: "file.txt", content: { toJSON() { throw new Error("must not serialize"); } } } };
+  activities.push({ type: "toolCall", call, text: "file.txt" });
+  const html = render({ live: true, activities });
+  assert.equal((html.match(/class="process-activity-row"/g) ?? []).length, 32);
+  assert.doesNotMatch(html, /Thought 0</);
+  assert.match(html, /Thought 79/);
+  assert.match(html, /file.txt/);
 });
