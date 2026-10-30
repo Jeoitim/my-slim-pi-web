@@ -2,6 +2,8 @@
 
 **My Slim Pi 的 WebUI 最简实现。** 基于 [agegr/pi-web](https://github.com/agegr/pi-web)，为现有 My Slim Pi 提供浏览器聊天、会话和审批入口。Agent 的工具、扩展、记忆与权限规则均沿用 My Slim Pi。
 
+当前开发版本为 `0.13.0-jeoitim.1`，已通过独立 PR 集成上游 0.13.0；同步记录见 [upstream.md](docs/upstream.md)。
+
 从源码运行需要 Node.js **24+**，以及已安装、构建完成的 [My Slim Pi](https://github.com/Jeoitim/my-slim-pi)（Pi **1.4.0**）。Windows 使用 PowerShell 7，Linux 使用原生 Bash / Node；两端各自安装依赖。桌面安装包自带 Node.js 24。
 
 ## 启动
@@ -31,7 +33,7 @@ export PI_CODING_AGENT_DIR="/path/to/agent"
 
 桌面与 Web 共用现有界面、权限系统和 Agent 数据。窗口按钮内嵌于应用顶部并跟随主题；“设置 → 桌面应用”管理受认证保护的本地 Web 入口、端口和后台服务。
 
-预编译的 Windows x64 安装包见 [GitHub Releases](https://github.com/Jeoitim/my-slim-pi-web/releases)；Linux x64 AppImage 在原生构建成功时一同提供。下载说明与校验范围见[当前版本说明](docs/releases/0.12.2-jeoitim.6.md)；从源码构建如下：
+预编译的 Windows x64 安装包见 [GitHub Releases](https://github.com/Jeoitim/my-slim-pi-web/releases)；Linux x64 AppImage 在原生构建成功时一同提供。已发布版本的下载说明与校验范围见[发布说明](docs/releases/0.12.2-jeoitim.6.md)；从源码构建如下：
 
 ```sh
 npm run desktop:dev
@@ -43,6 +45,8 @@ Windows x64 生成 NSIS 安装包，Linux x64 生成 AppImage；两者随包包�
 
 ## 本项目设置
 
+- **设置 → 常规 → 对话 → 默认折叠处理详情**：运行时显示最新一行原有思考或工具卡片，可滚动回看、点击展开；任务完成后隐藏预览。关闭开关恢复完整平铺显示，无过程区域高度限制或内部滚动。
+- 终端自动检测系统 Shell，可在头部切换 PowerShell、CMD、Git Bash 等已安装的 Shell，已有终端继续保留。
 - 对话工具栏切换 **AUTO / ACT / ASK / PLAN**，显示当前会话的真实权限状态。
 - **设置 → My Slim Pi**：开关 AUTO/ACT 人工审批提醒。开启时等待最多 90 秒；关闭后直接拒绝，不弹窗、不等待。ASK 始终逐次审批、无限等待。
 - 后台模型入口调用 My Slim Pi 原有设置，选择审批和 Hermes 模型。Web 不另建子代理体系。

@@ -15,6 +15,7 @@ import {
 } from "@/hooks/useChatAppearance";
 import { useEnterSendMode, setEnterSendMode } from "@/hooks/useEnterSendMode";
 import { useFilesPlacement, setFilesPlacement } from "@/hooks/useFilesPlacement";
+import { useProcessDetailsFolded, setProcessDetailsFolded } from "@/hooks/useProcessDetailsPreference";
 import type { ProjectTrustStatus } from "@/lib/api-types";
 import {
   setLastSettingsSection,
@@ -60,6 +61,7 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
   const { width: chatContentWidth, setWidth: setChatContentWidth, fontSize, setFontSize } = useChatAppearance();
   const enterSendMode = useEnterSendMode();
   const filesPlacement = useFilesPlacement();
+  const processDetailsFolded = useProcessDetailsFolded();
   const [thinkingExpanded, setThinkingExpanded] = useState(false);
   const [cacheMissNotices, setCacheMissNotices] = useState<boolean | null>(null);
   const [cacheMissNoticesSaving, setCacheMissNoticesSaving] = useState(false);
@@ -260,6 +262,10 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
       <section className="settings-general-section">
         <h3 className="settings-general-heading">{t("settings.chat")}</h3>
         <div className="settings-chat-options">
+          <div className="settings-chat-option settings-chat-switch-option">
+            <span>{t("settings.foldProcessDetails")}</span>
+            <ConfigSwitch checked={processDetailsFolded} label={t("settings.foldProcessDetails")} onChange={setProcessDetailsFolded} />
+          </div>
           <div className="settings-chat-option settings-chat-switch-option">
             <span>{t("settings.thinkingExpandedDefault")}</span>
             <ConfigSwitch

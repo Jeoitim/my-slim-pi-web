@@ -5,6 +5,7 @@ import ReactMarkdown from "react-markdown";
 import { MarkdownBody } from "./MarkdownBody";
 import { ImagePreview } from "./ImagePreview";
 import { ThinkingIcon } from "./ThinkingIcon";
+import type { ProcessActivity } from "@/lib/process-activity";
 import { copyText } from "@/lib/clipboard";
 import { useI18n } from "@/hooks/useI18n";
 import { useIsMobile } from "@/hooks/useIsMobile";
@@ -1017,6 +1018,20 @@ function BlockView({ block, searchTarget, toolResults, isStreaming, streamingDur
   return null;
 }
 
+/** Fold previews share the transcript's actual cards and typography. */
+export const ProcessActivityView = memo(function ProcessActivityView({ activity, result, onExpand }: {
+  activity: ProcessActivity;
+  result?: ToolResultMessage;
+  onExpand: () => void;
+}) {
+  if (activity.type === "toolCall") return <ToolCallBlock block={activity.call} result={result} duration={result?.durationMs !== undefined && result.durationMs >= TOOL_DURATION_MIN_MS ? result.durationMs : undefined} onPreviewExpand={onExpand} />;
+  if (activity.type === "thinking") return <ThinkingBlock block={{ type: "thinking", thinking: activity.text }} blockIndex={0} onPreviewExpand={onExpand} />;
+  return <div className="process-commentary-preview" role="button" tabIndex={0} aria-expanded={false} onClick={onExpand}
+    onKeyDown={event => { if (event.key === "Enter" || event.key === " ") { event.preventDefault(); onExpand(); } }}>
+    <TextBlock block={{ type: "text", text: activity.text }} />
+  </div>;
+});
+
 function TextBlock({ block, isStreaming, cwd, onOpenFile }: { block: TextContent; isStreaming?: boolean; cwd?: string; onOpenFile?: (filePath: string, page?: number) => void }) {
   return <SafeMarkdownBody isStreaming={isStreaming} cwd={cwd} onOpenFile={onOpenFile}>{block.text}</SafeMarkdownBody>;
 }
@@ -1034,15 +1049,17 @@ function ThinkingText({ text }: { text: string }) {
   return pieces.map((piece, index) => <div key={index}>{piece.text}</div>);
 }
 
-export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex }: {
+export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex, onPreviewExpand }: {
   block: ThinkingContent;
   duration?: number;
   sessionId?: string;
   entryId?: string;
   blockIndex: number;
+  onPreviewExpand?: () => void;
 }) {
   const { t } = useI18n();
-  const [expanded, setExpanded] = useState(isThinkingExpandedByDefault);
+  const [expandedByUser, setExpanded] = useState(isThinkingExpandedByDefault);
+  const expanded = !onPreviewExpand && expandedByUser;
   const [content, setContent] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -1099,7 +1116,7 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex 
   }, [expanded, block.deferred, content, sessionId, entryId, blockIndex]);
 
   return (
-    <div style={{
+    <div data-thinking-card style={{
       display: "flex", alignItems: "flex-start", gap: 6, minWidth: 0,
       border: "1px solid var(--border)",
       borderRadius: 7,
@@ -1114,7 +1131,7 @@ export function ThinkingBlock({ block, duration, sessionId, entryId, blockIndex 
         aria-expanded={expanded}
         aria-label={`${t("i18n.thinking")}${preview ? `: ${preview}` : ""}`}
         title={t("i18n.thinking")}
-        onClick={() => setExpanded((v) => !v)}
+        onClick={onPreviewExpand ?? (() => setExpanded((v) => !v))}
         style={{
           display: "inline-flex",
           alignItems: "center",
@@ -1184,16 +1201,18 @@ export function formatToolDuration(ms: number): string {
   return `${Math.floor(minutes / 60)}h ${minutes % 60}m ${remainder}s`;
 }
 
-function ToolCallBlock({ block, result, duration, onOpenSubagent }: { block: ToolCallContent; result?: ToolResultMessage; duration?: number; onOpenSubagent?: (sessionId: string, label: string) => void }) {
+function ToolCallBlock({ block, result, duration, onOpenSubagent, onPreviewExpand }: { block: ToolCallContent; result?: ToolResultMessage; duration?: number; onOpenSubagent?: (sessionId: string, label: string) => void; onPreviewExpand?: () => void }) {
   const { t } = useI18n();
-  const [expanded, setExpanded] = useState(() => isToolCallExpanded(block.toolCallId));
+  const [expandedByUser, setExpanded] = useState(() => isToolCallExpanded(block.toolCallId));
+  const previewOnly = Boolean(onPreviewExpand);
+  const expanded = !previewOnly && expandedByUser;
   const toggleExpanded = () => {
     const next = !expanded;
     setToolCallExpanded(block.toolCallId, next);
     setExpanded(next);
   };
-  const writtenFileText = getWrittenFileText(block);
-  const inputStr = writtenFileText ?? getToolCallInputText(block);
+  const writtenFileText = expanded ? getWrittenFileText(block) : null;
+  const inputStr = expanded ? writtenFileText ?? getToolCallInputText(block) : "";
   const isStreamingInput = block.rawInput !== undefined;
   const isEditTool = isEditToolName(block.toolName);
   const resultDiff = result && !result.isError ? getResultDiff(result) : null;
@@ -1201,10 +1220,8 @@ function ToolCallBlock({ block, result, duration, onOpenSubagent }: { block: Too
   // one file its result's patch changed, the path its TUI renderer shows.
   const resultDiffText = resultDiff?.text;
   const resultPatchPath = useMemo(() => singlePatchPath(resultDiffText), [resultDiffText]);
-  const patchFiles = getApplyPatchFiles(block, result);
-  const patchLabel = isApplyPatchToolName(block.toolName)
-    ? summarizeApplyPatchInput(block)
-    : null;
+  const patchFiles = expanded ? getApplyPatchFiles(block, result) : null;
+  const patchLabel = useMemo(() => isApplyPatchToolName(block.toolName) ? summarizeApplyPatchInput(block) : null, [block]);
   // A script and the calls it made, instead of the input JSON. Streamed input is
   // still incomplete JSON and keeps the generic view.
   const codemodeCode = block.toolName === CODEMODE_TOOL_NAME && !isStreamingInput ? codemodeScript(block.input) : null;
@@ -1225,8 +1242,8 @@ function ToolCallBlock({ block, result, duration, onOpenSubagent }: { block: Too
   const mcpLabel = mcpToolLabel(block.toolName, result?.details);
 
   // Result display
-  const resultContent = result ? (codemode ? stripCodemodeHeader(result.content) : result.content) : [];
-  const joinedResultText = result
+  const resultContent = result && !previewOnly ? (codemode ? stripCodemodeHeader(result.content) : result.content) : [];
+  const joinedResultText = result && expanded
     ? resultContent.filter((b): b is { type: "text"; text: string } => b.type === "text").map((b) => b.text).join("\n")
     : null;
   const resultText = mcpLabel && joinedResultText !== null ? prettyMcpResultText(joinedResultText) : joinedResultText;
@@ -1238,7 +1255,7 @@ function ToolCallBlock({ block, result, duration, onOpenSubagent }: { block: Too
   const codemodeCallCount = codemode ? codemode.calls.length + codemode.omitted : 0;
 
   return (
-    <div
+    <div data-tool-card
       style={{
         borderRadius: 7,
         overflow: "hidden",
@@ -1250,7 +1267,9 @@ function ToolCallBlock({ block, result, duration, onOpenSubagent }: { block: Too
       {/* ── Tool call header ── */}
       <div style={{ display: "flex", alignItems: "stretch", minWidth: 0 }}>
         <button
-          onClick={toggleExpanded}
+          type="button"
+          aria-expanded={expanded}
+          onClick={onPreviewExpand ?? toggleExpanded}
           style={{
             display: "flex",
             alignItems: "center",

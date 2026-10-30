@@ -10,6 +10,8 @@
 
 2026-10-30 重新抓取确认：上游最新仍为 `d128bae`（`v0.13.0`），本地纯镜像 `refs/heads/upstream` 与 `upstream/main` 一致。此次通过独立分支 `codex/integrate-upstream-0.13.0` 集成 `e533d9b..d128bae` 的 65 个提交、207 个文件变化；新的折叠样式与设置开关在集成之后单独提交。
 
+[独立集成 PR #2](https://github.com/Jeoitim/my-slim-pi-web/pull/2) 已在 Linux checks、e2e 和 build 全部通过后合入开发主线，合并提交 `3139b8358145b039081da32bd0ac617da7a39bf4`，保留上游祖先关系。
+
 集成包含新的会话续期与 Debug/SSE 统计、压缩期消息排队、发送失败草稿恢复、子代理完成通知和等待预算，以及手机 composer 浮层、统计行、代码自动换行、SVG 预览、模型图片尺寸限制和二进制下载提示。Pi 保持本 fork 已提前固定的完整 1.4.0 精确依赖树，不重新安装另一套 SDK，也不启用独立 Web 子代理所有权。
 
 兼容处理：lease 路由和客户端一起采用上游的 `renewIdleTimer()` 完整空闲倒计时，同时保留扩展后台活动判断；不再创建浏览器自身的存活 provider。旧版 v1 扩展存活注册表即使没有可选的检查方法也继续复用，不清空已注册的扩展工作。已审查 `GET /api/agent/debug`：仅返回状态、计数、时间和服务名称，不返回提示词、工具参数、MCP 配置或凭据；显式加入已认证的远程 GET 清单，仍保留 Web 密码、Host/Origin 和桌面入口签名验证。Debug 面板延迟加载，保留桌面冷启动路径。Shell 检测与输入修复、权限模式、加密 Web 密码及现有折叠逻辑均保留。上游 npm 发布工作流限制为 `agegr/pi-web` 原仓库，fork 不自动发布到其 npm 通道。

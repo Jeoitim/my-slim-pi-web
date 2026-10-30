@@ -9,7 +9,8 @@ import { splitNoticeText } from "@/lib/notice-text";
 import { EXTENSION_DIALOG_BASE_WIDTH, fitExtensionDialogWidth } from "@/lib/extension-dialog-fit";
 import { asBracketedPaste, toTerminalKeyData } from "@/lib/terminal-input";
 import { countToolCallBlocks, getDisplayableAssistantBlocks, hasAssistantAnswer, isHiddenCustomMessage, isMessageGroupAnchor } from "@/lib/message-display";
-import { getProcessActivity, type ProcessActivity } from "@/lib/process-activity";
+import { getProcessActivities, PROCESS_ACTIVITY_LIMIT, type ProcessActivity } from "@/lib/process-activity";
+import { useProcessDetailsFolded } from "@/hooks/useProcessDetailsPreference";
 import { ProcessDetailsGroup } from "./ProcessDetailsGroup";
 import { extractTurnWrittenFiles, type WrittenFile } from "@/lib/turn-written-files";
 import { getFinalAnswerViews, keepWrittenFiles, type FinalAnswerViews } from "@/lib/turn-views";
@@ -194,6 +195,7 @@ function getUserInputText(message: AgentMessage): string | null {
 
 export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initialScrollPosition, onScrollPositionChange, sessionRunning, newSessionCwd, newSessionDraftKey, newSessionContextBar, initialNewSessionChoices, onNewSessionChoicesChange, onAgentEnd, onToolEnd, onAttentionNeeded, onSessionCreated, onSessionForked, modelsRefreshKey, chatInputRef, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onDebugSnapshotReaderChange, onSessionStatsChange, onSessionStatsPanelOpen, onOpenSettings, onContextUsageChange, onOpenFile, onFilesUploaded, onOpenSubagent, onAskInNewChat, quoteSelectionEnabled = false, initialPrompt, onInitialPromptConsumed, soundEnabled = true, onSoundToggle, playDoneSound = () => {}, unlockAudio, holdAudio }: Props) {
   const { t } = useI18n();
+  const processDetailsFolded = useProcessDetailsFolded();
   const isMobile = useIsMobile();
   const completionNotificationsEnabled = session?.relation?.kind !== "subagent";
 
@@ -1181,7 +1183,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                 let processToolCount = 0;
                 let processRefIdx: number | undefined;
                 let revealProcess = false;
-                let processActivity: ProcessActivity | undefined;
+                const processActivities: ProcessActivity[] = [];
 
                 for (let processIdx = userIdx + 1; processIdx < processEndIdx; processIdx++) {
                   const processMessage = messages[processIdx];
@@ -1202,7 +1204,10 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                     continue;
                   }
                   const message = processIdx === finalAssistantIdx && finalViews ? finalViews.process : processMessage;
-                  processActivity = getProcessActivity(message.content) ?? processActivity;
+                  if (isLiveTail && processDetailsFolded) {
+                    processActivities.push(...getProcessActivities(message.content));
+                    if (processActivities.length > PROCESS_ACTIVITY_LIMIT) processActivities.splice(0, processActivities.length - PROCESS_ACTIVITY_LIMIT);
+                  }
                   // The final message's notices go under its answer when it has one.
                   const withNotices = processIdx !== finalAssistantIdx || !finalAnswerMessage;
                   const blocks = getDisplayableAssistantBlocks(message);
@@ -1234,7 +1239,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                       key={`process-group-${messageKeys[groupStartIdx]}`}
                       ref={processRefIdx === undefined ? undefined : (el) => { messageRefs.current[processRefIdx] = el; }}
                     >
-                      <ProcessDetailsGroup messageCount={processMessageCount} toolCallCount={processToolCount} durationMs={turnDurationMs} cacheMisses={processCacheMisses} reveal={revealProcess} activity={processActivity} live={isLiveTail} pendingToolResults={activeToolResults} store={streamingStore} onCommit={updatePromptAnchor} messageProps={processMessageProps}>
+                      <ProcessDetailsGroup messageCount={processMessageCount} toolCallCount={processToolCount} durationMs={turnDurationMs} cacheMisses={processCacheMisses} reveal={revealProcess} activities={processActivities} live={isLiveTail} folded={processDetailsFolded} store={streamingStore} onCommit={updatePromptAnchor} messageProps={processMessageProps}>
                         {processViews}
                       </ProcessDetailsGroup>
                     </div>,
@@ -1258,7 +1263,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                     messageOverride: finalAnswerMessage,
                     writtenFiles,
                     // Without process details the turn's time goes under the answer.
-                    turnDurationMs: processViews.length === 0 ? turnDurationMs : undefined,
+                    turnDurationMs: !processDetailsFolded || processViews.length === 0 ? turnDurationMs : undefined,
                     recoverTruncation: endIdx === messages.length && !isStreaming && !hasAssistantAnswer(finalAnswerMessage),
                   }));
                 }
@@ -1268,7 +1273,7 @@ export function ChatWindow({ session, searchTarget, onSearchTargetHandled, initi
                 idx = endIdx;
               }
               if (!streamingGrouped && isStreaming && hasStreamingContent) {
-                rendered.push(<ProcessDetailsGroup key="orphan-stream" messageCount={0} toolCallCount={0} live store={streamingStore} onCommit={updatePromptAnchor} messageProps={processMessageProps} />);
+                rendered.push(<ProcessDetailsGroup key="orphan-stream" messageCount={0} toolCallCount={0} live folded={processDetailsFolded} store={streamingStore} onCommit={updatePromptAnchor} messageProps={processMessageProps} />);
               }
               const { startIndex } = getVisibleRenderWindow(rendered.length, visibleCount);
               const hasMore = startIndex > 0 || hasEarlierMessages;
