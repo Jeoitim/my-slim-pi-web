@@ -57,7 +57,7 @@ const assistant = content => ({ role: "assistant", provider: "fixture", model: "
 
 try {
   const { internalUrl: base } = await ready;
-  browser = await chromium.launch();
+  browser = await chromium.launch({ ignoreDefaultArgs: ["--hide-scrollbars"] });
   for (const { viewport, id, file } of cases) {
     const timestamp = "2026-10-30T00:00:00.000Z";
     let parentId = "user";
@@ -183,8 +183,7 @@ try {
       if ((await setting.getAttribute("aria-checked")) !== String(enabled)) await setting.click();
       assert.equal(await setting.getAttribute("aria-checked"), String(enabled));
       await page.locator(".settings-dialog-close").click();
-      const hideSidebar = page.getByRole("button", { name: "Hide sidebar", exact: true });
-      if (viewport.width <= 640 && await hideSidebar.isVisible()) await hideSidebar.click();
+      if (viewport.width <= 640) await page.locator(".sidebar-overlay-backdrop").click({ position: { x: viewport.width - 5, y: viewport.height / 2 } });
     };
     await chooseFolding(false);
     await page.getByText("Process step 23: retained details", { exact: true }).waitFor();
@@ -212,6 +211,16 @@ try {
     await page.getByRole("button", { name: "Stop agent", exact: true }).waitFor({ state: "hidden" });
     await page.getByText("Fixture provider failure", { exact: false }).waitFor();
     assert.equal(await page.getByText("Intermediate progress before failed tool", { exact: true }).count(), 0);
+    await page.evaluate(() => localStorage.setItem("pi-locale", "zh-CN"));
+    await page.reload();
+    await page.waitForFunction(() => document.documentElement.lang === "zh-CN");
+    const showSidebar = page.getByRole("button", { name: "显示侧边栏", exact: true });
+    if (await showSidebar.isVisible()) await showSidebar.click();
+    await page.getByRole("button", { name: "设置", exact: true }).click();
+    const chineseSwitch = page.getByRole("switch", { name: "默认折叠处理详情", exact: true });
+    await chineseSwitch.scrollIntoViewIfNeeded();
+    assert.equal(await chineseSwitch.getAttribute("aria-checked"), "true");
+    await page.screenshot({ path: join(artifacts, `settings-zh-CN-${viewport.width}.png`) });
     assert.deepEqual(errors, []);
     console.log(`PASS ${viewport.width}px: original cards, one-row scroll history, reader position, bounded expansion, final answer, completion hides preview, setting off restores flat history/live display, persistence and provider errors`);
     await context.close();
