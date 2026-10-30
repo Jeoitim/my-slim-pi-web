@@ -836,6 +836,18 @@ html[data-keyboard-open] .terminal-extra-keys {
   background-color: color-mix(in srgb, var(--text-dim) 65%, transparent);
   border-width: 1px;
 }
+/* Chrome's native thin scrollbar can fade out on Windows. Custom scrollbars
+   keep the review cue visible even while the pointer is elsewhere. */
+@supports selector(::-webkit-scrollbar) {
+  .process-activity-scroll,
+  .process-details-body { scrollbar-width: auto; scrollbar-color: auto; }
+}
+.process-activity-scroll:focus-visible,
+.process-details-body:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  outline-offset: 2px;
+  border-radius: 7px;
+}
 .process-activity-row { min-width: 0; padding-bottom: 6px; }
 .process-commentary-preview { cursor: pointer; min-width: 0; }
 .process-commentary-preview > div,
