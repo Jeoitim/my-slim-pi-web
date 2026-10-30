@@ -28,6 +28,14 @@ if (-not (Test-Path -LiteralPath (Join-Path $root '.git')) -or
 }
 
 $targets = [System.Collections.Generic.List[System.IO.FileSystemInfo]]::new()
+function ConvertTo-LiteralFileSystemPath([string]$absolutePath) {
+    if (-not [System.IO.Path]::IsPathFullyQualified($absolutePath) -or $absolutePath.StartsWith('\\.\')) {
+        throw "拒绝非绝对路径或设备路径：$absolutePath"
+    }
+    if (-not $IsWindows -or $absolutePath.StartsWith('\\?\')) { return $absolutePath }
+    if ($absolutePath.StartsWith('\\')) { return '\\?\UNC\' + $absolutePath.Substring(2) }
+    return '\\?\' + $absolutePath
+}
 function Add-ExistingTarget([string]$path) {
     if (Test-Path -LiteralPath $path) {
         $targets.Add((Get-Item -LiteralPath $path -Force))
@@ -119,9 +127,13 @@ if ($running.Count -gt 0) {
 $nestedLinks = [System.Collections.Generic.List[System.IO.FileSystemInfo]]::new()
 foreach ($item in $targets) {
     if (-not $item.PSIsContainer) { continue }
-    $itemPrefix = [System.IO.Path]::GetFullPath($item.FullName) + [System.IO.Path]::DirectorySeparatorChar
+    # Git Bash can create real files named NUL. Enumerate/delete through the
+    # literal Windows namespace so .NET never remaps those files to \\.\NUL.
+    # These paths still derive only from the validated targets above.
+    $literalTarget = ConvertTo-LiteralFileSystemPath $item.FullName
+    $itemPrefix = $literalTarget + [System.IO.Path]::DirectorySeparatorChar
     $pending = [System.Collections.Generic.Stack[string]]::new()
-    $pending.Push($item.FullName)
+    $pending.Push($literalTarget)
     while ($pending.Count -gt 0) {
         foreach ($entry in (Get-ChildItem -LiteralPath $pending.Pop() -Force -ErrorAction Stop)) {
             $entryPath = [System.IO.Path]::GetFullPath($entry.FullName)
@@ -144,9 +156,9 @@ $failed = [System.Collections.Generic.List[string]]::new()
 foreach ($item in $targets) {
     try {
         if ($item.PSIsContainer) {
-            Remove-Item -LiteralPath $item.FullName -Recurse -Force -ErrorAction Stop
+            Remove-Item -LiteralPath (ConvertTo-LiteralFileSystemPath $item.FullName) -Recurse -Force -ErrorAction Stop
         } else {
-            Remove-Item -LiteralPath $item.FullName -Force -ErrorAction Stop
+            Remove-Item -LiteralPath (ConvertTo-LiteralFileSystemPath $item.FullName) -Force -ErrorAction Stop
         }
         Write-Host "已删除：$([System.IO.Path]::GetRelativePath($root, $item.FullName))"
     } catch {

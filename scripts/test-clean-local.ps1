@@ -48,14 +48,21 @@ try {
     $preserved = @('node_modules/dependency.txt', '.env.local', 'package-lock.json', 'dist-desktop/setup.exe', 'dist-desktop/setup.exe.sha256')
     foreach ($file in $preserved) { Set-Content -LiteralPath (Join-Path $normal $file) -Value 'preserve' }
     Add-Junction (Join-Path $normal '.desktop/external-junction') $external
+    $reservedPath = '\\?\' + [System.IO.Path]::Join($normal, '.local', 'NUL')
+    $outsideReservedPath = '\\?\' + [System.IO.Path]::Join($external, 'NUL')
+    [System.IO.File]::WriteAllText($reservedPath, 'Generated file with a Windows reserved name.')
+    [System.IO.File]::WriteAllText($outsideReservedPath, 'Must survive a nested junction.')
     Invoke-Clean $normal $false
     Assert-Check (Test-Path -LiteralPath (Join-Path $normal '.desktop/generated.txt')) 'Preview deleted generated files.'
+    Assert-Check (Test-Path -LiteralPath $reservedPath) 'Preview deleted a reserved-name file.'
     Invoke-Clean $normal $true
     foreach ($file in $preserved) { Assert-Check (Test-Path -LiteralPath (Join-Path $normal $file)) "Cleanup removed $file" }
     Assert-Check (Test-Path -LiteralPath (Join-Path $normal '.git')) 'Cleanup removed Git metadata.'
     Assert-Check (-not (Test-Path -LiteralPath (Join-Path $normal '.desktop'))) 'Generated directory was not removed.'
     Assert-Check (-not (Test-Path -LiteralPath (Join-Path $normal 'dist-desktop/setup.exe.blockmap'))) 'Blockmap was not removed.'
     Assert-Check (Test-Path -LiteralPath $outsideMarker) 'Cleanup followed a nested junction.'
+    Assert-Check (-not (Test-Path -LiteralPath $reservedPath)) 'Cleanup failed to remove a literal reserved-name file.'
+    Assert-Check (Test-Path -LiteralPath $outsideReservedPath) 'Cleanup followed a junction to a reserved-name file.'
     Invoke-Clean $normal $true
 
     $tracked = New-Fixture 'tracked'
@@ -75,7 +82,7 @@ try {
     Add-Junction (Join-Path $ancestor 'demo') $external
     Invoke-Clean $ancestor $true $true
     Assert-Check (Test-Path -LiteralPath $outsideMarker) 'Cleanup followed a linked ancestor.'
-    Write-Host 'Passed: preview, generated cleanup, retained inputs/installers, idempotence, tracked-file refusal, target/ancestor junction refusal and nested-junction safety.'
+    Write-Host 'Passed: preview, generated cleanup, reserved-name files, retained inputs/installers, idempotence, tracked-file refusal, target/ancestor junction refusal and nested-junction safety.'
 } finally {
     $expectedParent = [System.IO.Path]::GetFullPath([System.IO.Path]::GetTempPath()).TrimEnd('\', '/')
     if ([System.IO.Path]::GetDirectoryName($testArea) -ne $expectedParent -or
@@ -85,5 +92,6 @@ try {
     foreach ($link in $links) {
         if (Test-Path -LiteralPath $link) { Remove-Item -LiteralPath $link -Force }
     }
-    if (Test-Path -LiteralPath $testArea) { Remove-Item -LiteralPath $testArea -Recurse -Force }
+    $testCleanupPath = if ($testArea.StartsWith('\\')) { '\\?\UNC\' + $testArea.Substring(2) } else { '\\?\' + $testArea }
+    if (Test-Path -LiteralPath $testCleanupPath) { Remove-Item -LiteralPath $testCleanupPath -Recurse -Force }
 }
