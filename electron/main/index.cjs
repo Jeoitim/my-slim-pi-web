@@ -7,6 +7,7 @@ const { DesktopWebPassword, validateWebPassword } = require("./web-password.cjs"
 const { readSettings, writeSettings, validatePatch } = require("./settings.cjs");
 const { assertSender, isAppUrl, externalLink } = require("./security.cjs");
 const { validateClipboardText } = require("./clipboard.cjs");
+const { historyUrl, openHistoryViewer } = require("./history-viewer.cjs");
 const { version } = require("../../package.json");
 const { existsSync } = require("node:fs");
 
@@ -78,6 +79,7 @@ function createWindow() {
   window.webContents.on("will-redirect", (event, url) => { if (!isAppUrl(url, service.origin)) event.preventDefault(); });
   window.webContents.setWindowOpenHandler(({ url }) => {
     if (isAppUrl(url, service.origin)) void window.loadURL(url);
+    else if (historyUrl(url, service.origin)) openHistoryViewer({ BrowserWindow, session, parent: window, url, origin: service.origin, token: service.token });
     else {
       const parsed = (() => { try { return new URL(url); } catch { return null; } })();
       if (parsed?.origin === service.origin) {

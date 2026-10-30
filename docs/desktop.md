@@ -21,7 +21,7 @@ Electron 是宿主，Next.js / Pi SDK 仍是唯一后端。聊天、会话、权
 
 `titleBarStyle:hidden` 移除系统标题条。macOS 原生交通灯内嵌于左上方；Windows/Linux 用 `titleBarOverlay` 把平台按钮叠加到 36px 应用顶部。颜色跟随现有主题，保留系统拖动、缩放、最大化双击及 Windows Snap。标题区只保留产品名称文字和平台按钮，不放品牌图标或额外全屏图标；全屏可用平台按钮或菜单 / F11。使用 `titlebar-area-*` 安全区避免按钮重叠。文件 / 终端面板全宽展开和窄窗口覆盖时都避开 36px 标题区，确保还原与关闭按钮可见。macOS/Linux 实际窗口管理器表现需要各平台验收。
 
-保持 `nodeIntegration:false`、`contextIsolation:true`、`sandbox:true`、`webSecurity:true`。IPC 检查主窗口、主 Frame、精确 origin 和应用页面路径；没有泛用 shell、原始 IPC、require 或任意 URL 打开能力。导出/预览窗口不加载 preload，禁用脚本。普通浏览器不显示桌面设置；PWA 不依赖 Electron。
+保持 `nodeIntegration:false`、`contextIsolation:true`、`sandbox:true`、`webSecurity:true`。IPC 检查主窗口、主 Frame、精确 origin 和应用页面路径；没有泛用 shell、原始 IPC、require 或任意 URL 打开能力。完整历史使用独立的只读窗口：允许 Pi 导出页的内嵌显示脚本，不加载 preload，不共享主窗口的存储或 cookie，并用 CSP 沙盒隔离页面来源。网络仅允许加载本次会话的导出文档，禁止访问 Agent API、嵌入框架和额外窗口。其他预览窗口继续禁用脚本。普通浏览器不显示桌面设置；PWA 不依赖 Electron。
 
 桌面窗口的会话正文、代码、输入框、文件预览和终端提供与主题一致的文本右键菜单，按区域提供复制、全选和粘贴。菜单挂载在页面根部并限制在标题区下方的可见窗口内，避免被滚动画布或全宽面板裁切；终端菜单跟随终端自己的明暗主题。复制按钮和 `/copy` 通过受限 IPC 写入系统剪贴板，写入成功后才显示成功；粘贴使用编辑器和终端原有的原生粘贴事件，不向页面暴露通用剪贴板读取接口。
 
@@ -100,6 +100,8 @@ Linux 使用 export / read -rsp。不要将明文密码放入源码、命令行�
 上游维护遵循 [AGENTS.md](../AGENTS.md)：`upstream` 纯跟踪 → 独立集成 PR → `my-slim-pi-web`。重点接点是 page/layout、DesktopShell/DesktopSettings、SettingsPanel、settings-navigation、remote-access 和 next.config；不复制 rpc-manager 或权限系统。
 
 ## 验证
+
+`node electron/scripts/history-viewer-check.mjs` 验证实际桌面运行目录的完整历史正文、思考、工具、内嵌图片、分支树、刷新和窗口隔离；加 `--password` 验证启用 Web 密码的入口。它使用含中文和空格的独立 AgentRoot 与工作目录，不调用模型服务。修复与构建记录见 [desktop-history-validation.md](desktop-history-validation.md)。
 
 `npm run test:desktop:password` 使用 Windows 生产运行目录及隔离用户目录，实际经过系统加密、设置界面保存、重启登录、再次启动恢复、改密令旧登录失效、活动任务取消保护、环境变量覆盖、删除关闭入口和损坏密文恢复。通过 `PI_DESKTOP_E2E_EXECUTABLE` 可指定其他 Windows 产物。脚本不调用模型服务、不修改个人 AgentRoot；Linux 密钥环和 macOS 钥匙串需分别实机验证。
 

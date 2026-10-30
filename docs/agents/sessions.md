@@ -264,6 +264,8 @@ Files: `lib/markdown.ts` (`markdownClobberPrefix`, `rehypeMatchClobberedIds`, `j
 
 ## Exported session HTML
 - `/api/sessions/[id]/export` delegates to pi's export helper, then makes the generated HTML's recursive tree helpers iterative, so very deep linear sessions do not overflow the browser call stack.
+- Run the SDK's `exportFromFile()` in a bounded Node worker with its file URL and input/output paths as separate arguments, not by starting the full CLI. Cold packaged CLI startup can fail the export before it produces a document. The worker preserves the CLI's exact helper/output while keeping large synchronous session reads and HTML generation off the Agent's event loop; no extensions or models need initialization. Keep the timeout and temporary-file cleanup.
+- The SDK export's message area is populated by its embedded script. Desktop Full history must use the isolated, script-enabled history viewer described in client-platform.md, never the generic script-disabled preview or a window with the app preload. Browser exports retain the SDK output and the same shared backend API.
 
 ## Deleting the selected session outlives the delete click (`components/AppShell.tsx`)
 - `SessionItem.performDelete` captures `onDeleted` at the delete click, and `handleSessionDeleted` is a `useCallback` whose `selectedSession` closure is from that same render. The DELETE request can complete **after** the user has switched sessions, so the captured selection still names the session being deleted.

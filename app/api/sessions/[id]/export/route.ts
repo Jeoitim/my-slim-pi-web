@@ -1,10 +1,10 @@
 import { randomUUID } from "crypto";
 import { execFile } from "child_process";
-import { existsSync, mkdirSync, readFileSync, rmSync } from "fs";
+import { mkdirSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
-import { basename, dirname, join } from "path";
+import { basename, join } from "path";
 import { promisify } from "util";
-import { fileURLToPath, pathToFileURL } from "url";
+import { pathToFileURL } from "url";
 import { NextResponse } from "next/server";
 import { resolveSessionPath } from "@/lib/session-reader";
 
@@ -14,10 +14,6 @@ export const runtime = "nodejs";
 
 type PiCodingAgentModule = {
   getPackageDir: () => string;
-};
-
-type ExportHtmlModule = {
-  exportFromFile: (inputPath: string, outputPath: string) => Promise<string>;
 };
 
 async function getPiPackageDir(): Promise<string | null> {
@@ -39,43 +35,6 @@ function getContentDisposition(fileName: string, inline: boolean): string {
   const fallback = fileName.replace(/[^\x20-\x7E]|["\\;\r\n]/g, "_") || "session.html";
   const disposition = inline ? "inline" : "attachment";
   return `${disposition}; filename="${fallback}"; filename*=UTF-8''${encodeHeaderValue(fileName)}`;
-}
-
-async function getPiCliPath(): Promise<string | null> {
-  const candidates = new Set<string>();
-  const packageDir = await getPiPackageDir();
-
-  if (packageDir) {
-    candidates.add(join(packageDir, "dist", "cli.js"));
-  }
-
-  try {
-    const resolver = (import.meta as ImportMeta & {
-      resolve?: (specifier: string) => string | Promise<string>;
-    }).resolve;
-    if (typeof resolver === "function") {
-      const indexUrl = await resolver("@earendil-works/pi-coding-agent");
-      candidates.add(join(dirname(fileURLToPath(indexUrl)), "cli.js"));
-    }
-  } catch {
-    // Next.js production bundles can strip import.meta.resolve.
-  }
-
-  candidates.add(
-    join(
-      process.cwd(),
-      "node_modules",
-      "@earendil-works",
-      "pi-coding-agent",
-      "dist",
-      "cli.js"
-    )
-  );
-
-  for (const candidate of candidates) {
-    if (existsSync(candidate)) return candidate;
-  }
-  return null;
 }
 
 /**
@@ -215,27 +174,23 @@ function patchExportHtml(html: string): string {
 }
 
 async function exportSession(filePath: string, outputPath: string): Promise<void> {
-  const cliPath = await getPiCliPath();
-  if (cliPath) {
-    await execFileAsync(process.execPath, [cliPath, "--export", filePath, outputPath], {
-      cwd: process.cwd(),
-      timeout: 30_000,
-      env: {
-        ...process.env,
-        PI_OFFLINE: "1",
-        PI_SKIP_VERSION_CHECK: "1",
-      },
-      maxBuffer: 1024 * 1024,
-    });
-    return;
-  }
-
   const packageDir = await getPiPackageDir();
-  if (!packageDir) throw new Error("pi CLI not found");
+  if (!packageDir) throw new Error("pi export helper not found");
 
   const exporterUrl = pathToFileURL(join(packageDir, "dist", "core", "export-html", "index.js")).href;
-  const { exportFromFile } = (await import(exporterUrl)) as ExportHtmlModule;
-  await exportFromFile(filePath, outputPath);
+  // Keep large exports off the Agent's event loop, without booting the entire
+  // CLI (providers, terminals and extensions) just to call this SDK function.
+  await execFileAsync(process.execPath, [
+    "--input-type=module", "--eval",
+    "const { exportFromFile } = await import(process.argv[1]); await exportFromFile(process.argv[2], process.argv[3]);",
+    exporterUrl, filePath, outputPath,
+  ], {
+    cwd: process.cwd(),
+    windowsHide: true,
+    timeout: 30_000,
+    env: { ...process.env, PI_OFFLINE: "1", PI_SKIP_VERSION_CHECK: "1" },
+    maxBuffer: 1024 * 1024,
+  });
 }
 
 export async function GET(
