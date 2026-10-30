@@ -495,7 +495,6 @@ export function AgentsConfig({
 
   return (
     <ConfigPanelShell embedded={embedded} title={t("common.agents")} subtitle={cwd ? shortenPath(cwd) : undefined} closeLabel={t("agents.close")} onClose={onClose}>
-      {managed && <p className="settings-general-description">{t("agents.cliManagedDescription")}</p>}
       {runtime === "pi-web" && <div className="agents-feature-setting">
         <div className="agents-feature-copy">
           <strong>{t("agents.builtInTitle")}</strong>
@@ -608,7 +607,7 @@ export function AgentsConfig({
 
                   {managed && selected?.scope === "builtin" && <p className="settings-general-description">{t("agents.cliBuiltinReadOnly")}</p>}
                   {hermes && <p className="settings-general-description">{t("agents.hermesDescription")}</p>}
-                  {!hermes && <><div style={{ display: "grid", gridTemplateColumns: isMobile ? "1fr" : "minmax(0, 1fr) minmax(0, 1fr)", gap: 12 }}>
+                  {!hermes && <><div style={{ display: "grid", gridTemplateColumns: isMobile || managed ? "1fr" : "minmax(0, 1fr) minmax(0, 1fr)", gap: 12 }}>
                     <Field label={t("agents.name")}>
                       {creating ? (
                         <input aria-label={t("agents.name")} value={draft.name} disabled={disabled} onChange={(event) => update("name", event.target.value)} style={inputStyle} />
@@ -689,7 +688,7 @@ export function AgentsConfig({
                     </div>
                   </Field>}</>}
 
-                  <div style={{ display: "grid", gridTemplateColumns: isMobile || hermes ? "1fr" : "minmax(0, 1.5fr) minmax(120px, 0.75fr) minmax(100px, 0.5fr)", gap: 12 }}>
+                  <div style={{ display: "grid", gridTemplateColumns: isMobile || hermes ? "1fr" : managed ? "minmax(0, 2fr) minmax(120px, 1fr)" : "minmax(0, 1.5fr) minmax(120px, 0.75fr) minmax(100px, 0.5fr)", gap: 12 }}>
                     <Field label={t("agents.model")}>
                       <div style={{ display: "flex", flexDirection: "column", gap: 4 }}>
                         <ModelSelector

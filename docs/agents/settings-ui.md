@@ -7,6 +7,7 @@
 
 ## My Slim Pi fork
 - The navigation exposes General, Models, Skills, Sub-agents and MCP. The Agents section renders the upstream `AgentsConfig` split editor; old Plugins links still resolve there. A managed installation lists CLI-supplied built-ins, user/project definitions and Hermes, without enabling the Web-owned subagent runtime. CLI model/thinking, description and prompt edits use the existing profile files; runtime-specific fields are shown read-only under Configuration details rather than interpreted as Web resource switches.
+- Keep the managed Sub-agents panel free of a top introduction paragraph. Its ID row uses one column, and its model/thinking row uses two columns across the available width; hiding Web-owned fields must not leave empty grid columns. Keep the upstream layout and shared field styles.
 - `MySlimPiApprovalSettings` lives in General and reuses its section styles and `ConfigSwitch`. `/api/my-slim-pi/settings` still changes only `reviewer.humanFallback` under a lock and atomic write; unsupported compiled extensions leave it disabled. Background model selection no longer sends `/subagents` or closes Settings. The Hermes row uses the same model selector and its own bounded settings writer. See [permissions](../permissions.md) and [subagents](subagents.md).
 
 ## General appearance

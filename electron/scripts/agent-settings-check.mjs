@@ -50,6 +50,12 @@ try {
   const active = settings.locator(".settings-section-host:not([hidden])");
   const chooseProfile = async name => { await active.locator(".config-sidebar-item").filter({ hasText: new RegExp(`^${name}$`) }).click(); };
   await chooseProfile("approver");
+  assert.equal(await active.getByText(/Manage My Slim Pi agents and background models/).count(), 0);
+  const modelField = await active.getByRole("button", { name: "Model override", exact: true }).boundingBox();
+  const thinkingField = await active.getByRole("combobox", { name: "Thinking", exact: true }).boundingBox();
+  const promptField = await active.getByRole("textbox", { name: "System instructions", exact: true }).boundingBox();
+  assert.ok(Math.abs(modelField.y - thinkingField.y) < 1, "Model and thinking controls align");
+  assert.ok(Math.abs(thinkingField.x + thinkingField.width - promptField.x - promptField.width) < 2, "Managed model row has no unused third column");
   assert.equal(await active.getByRole("textbox", { name: "System instructions", exact: true }).inputValue(), prompt.trim());
   await active.getByText("Configuration details", { exact: true }).click();
   await active.getByText(/allowedAgents: none/).waitFor();

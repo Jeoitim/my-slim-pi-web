@@ -57,7 +57,6 @@ export const zhTWLocale: LocalePlugin = {
     "slim.fallbackDescription": "開啟：需要人工審批時提醒並等待 90 秒，逾時拒絕。關閉：不彈窗、不等待，直接拒絕本次操作。ASK 始終逐次審批、無限等待。",
     "slim.updateRequired": "請先更新並重新建置 My Slim Pi 配套擴充功能，才能調整此選項。",
     "slim.saved": "已儲存。下次需要審批時生效，已開啟的審批維持目前處理。",
-    "agents.cliManagedDescription": "管理 My Slim Pi 的子代理與背景模型。修改儲存至 CLI 使用的同一份設定，套用於後續任務。",
     "agents.configuration": "設定詳情",
     "agents.cliBuiltinReadOnly": "內建子代理由 CLI 提供。可複製為自訂子代理後編輯。",
     "agents.hermesDescription": "用於背景記憶摘要。清除模型可跟隨目前對話，儲存後下次摘要生效。",

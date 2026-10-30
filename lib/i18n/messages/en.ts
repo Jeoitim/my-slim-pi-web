@@ -57,7 +57,6 @@ export const enLocale: LocalePlugin = {
     "slim.fallbackDescription": "On: notify and wait up to 90 seconds for human approval, then deny. Off: deny the current operation immediately, without a dialog or wait. ASK always requires per-call approval with no timeout.",
     "slim.updateRequired": "Update and rebuild the My Slim Pi companion extension to change this preference.",
     "slim.saved": "Saved. Applies to the next approval; an already open dialog keeps its current behavior.",
-    "agents.cliManagedDescription": "Manage My Slim Pi agents and background models. Changes use the CLI's configuration and apply to subsequent tasks.",
     "agents.configuration": "Configuration details",
     "agents.cliBuiltinReadOnly": "Built-in agents are provided by the CLI. Duplicate one to edit a custom profile.",
     "agents.hermesDescription": "Used for background memory summaries. Clear the model to follow the current session; changes apply to the next summary.",
