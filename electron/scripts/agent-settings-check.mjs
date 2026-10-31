@@ -36,6 +36,11 @@ try {
   origin = new URL(page.url()).origin;
   await page.evaluate(() => localStorage.setItem("pi-locale", "en"));
   await page.reload();
+  const bundledFont = await page.evaluate(async () => {
+    await document.fonts.load('14px "Noto Sans Mono"', "Pi 0123 Ж");
+    return Array.from(document.fonts).some(font => font.family.replaceAll('"', '') === "Noto Sans Mono" && font.status === "loaded");
+  });
+  assert.equal(bundledFont, true, "The bundled original monospace font loads");
   await page.getByRole("button", { name: "Settings", exact: true }).click();
   const settings = page.getByRole("dialog", { name: "Settings", exact: true });
   await settings.getByRole("button", { name: "General", exact: true }).click();

@@ -1,5 +1,4 @@
 import type { Metadata, Viewport } from "next";
-import { Noto_Sans_Mono } from "next/font/google";
 import { PwaRegistration } from "@/components/PwaRegistration";
 import { THEME_INIT_SCRIPT } from "@/lib/theme";
 import "katex/dist/katex.min.css";
@@ -8,12 +7,7 @@ import "./settings.css";
 import "./sidebar.css";
 import "./sidebar-menu.css";
 import "./desktop.css";
-
-const notoSansMono = Noto_Sans_Mono({
-  subsets: ["latin", "cyrillic"],
-  variable: "--font-noto-mono",
-  display: "swap",
-});
+import "./noto-font.css";
 
 export const metadata: Metadata = {
   title: "My Slim Pi Web",
@@ -63,8 +57,10 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="en" translate="no" className={`${notoSansMono.variable} notranslate`} suppressHydrationWarning>
+    <html lang="en" translate="no" className="notranslate" suppressHydrationWarning>
       <head>
+        <link rel="preload" href="/fonts/noto-sans-mono/latin.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+        <link rel="preload" href="/fonts/noto-sans-mono/cyrillic.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
         <meta name="google" content="notranslate" />
         <script
           dangerouslySetInnerHTML={{
