@@ -22,6 +22,10 @@ module.exports = {
   asar: true, npmRebuild: false, nodeGypRebuild: false,
   win: { target: [{ target: "nsis", arch: ["x64"] }], artifactName: "My.Slim.Pi.Web.Setup.${version}.${ext}", executableName: "MySlimPiWeb", icon: ".desktop/icons/icon.ico" },
   nsis: { include: "electron/installer/process-check.nsh",
+    // No differential updater is shipped. Use the checked, direct ZIP extractor;
+    // 7z's staging/CopyFiles path reports write failures as "app cannot be closed"
+    // and its final fallback explicitly ignores extraction errors.
+    useZip: true, differentialPackage: false,
     oneClick: false, perMachine: false, allowToChangeInstallationDirectory: true, deleteAppDataOnUninstall: false,
     createDesktopShortcut: true, createStartMenuShortcut: true, runAfterFinish: false },
   linux: { target: [{ target: "AppImage", arch: ["x64"] }], artifactName: "My.Slim.Pi.Web-${version}.${ext}", category: "Development", icon: ".desktop/icons/icon.png" },

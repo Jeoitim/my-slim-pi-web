@@ -23,8 +23,8 @@
 
 本次没有在 Linux/macOS 图形桌面验收；完整 Windows Web 套件的既有平台差异仍见 [上游集成记录](upstream-013-validation.md)。日志与截图位于忽略目录 `.local/agent-settings-*`，没有修改个人 Agent 目录、凭据或会话。
 
-## 本地安装包
+## 原设置界面安装包（已归档）
 
-`dist-desktop/My.Slim.Pi.Web.Setup.0.13.0-jeoitim.2.exe`，219,996,674 字节，同名 `.exe.sha256` 已生成。最终打包完成后再次通过原生设置验收；仅提取指定安装资源核对，宿主 ASAR 与已验收运行目录一致，Web BUILD_ID 均为 `CWztTjH_AGz5siXxbXmbz`，包内版本为 `0.13.0-jeoitim.2`。没有执行安装器，已发布的 `.1` 及本地旧安装包保留。
+`dist-desktop/previous/0.13.0-jeoitim.2-original/My.Slim.Pi.Web.Setup.0.13.0-jeoitim.2.exe`，219,996,674 字节，同名 `.exe.sha256` 已生成。最终打包完成后再次通过原生设置验收；仅提取指定安装资源核对，宿主 ASAR 与已验收运行目录一致，Web BUILD_ID 均为 `CWztTjH_AGz5siXxbXmbz`，包内版本为 `0.13.0-jeoitim.2`。此处为安装修复前的历史构建，当前同版本修复包及校验值见 [安装修复验证](desktop-installer-validation.md)。
 
 SHA-256：`3b54b61991974c99a061d83dfaaa6b8a4df4a1c77e84d4bebbb839e9175dc173`。

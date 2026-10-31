@@ -47,7 +47,25 @@ try {
             if (-not $owned.WaitForExit(5000)) { throw 'Owned application process survived stop' }
         }
         foreach ($ignored in @($uninstaller, $setup, $sibling, $other)) { Assert-Alive $ignored }
+        $cache = Join-Path $install 'resources/server/.desktop/next/server/route-cache'
+        $null = New-Item -ItemType Directory -Path $cache -Force
+        Set-Content -LiteralPath (Join-Path $cache 'old-page.json') -Value 'old page'
+        $keep = Join-Path $install 'keep-settings.json'
+        Set-Content -LiteralPath $keep -Value 'keep'
+        Invoke-Check $engine ClearCache 1
+        if ((Test-Path -LiteralPath $cache) -or -not (Test-Path -LiteralPath $keep)) { throw 'Cache cleanup scope mismatch' }
+        $outside = Join-Path $area 'external-agent'
+        $null = New-Item -ItemType Directory -Path $outside -Force
+        Set-Content -LiteralPath (Join-Path $outside 'auth.json') -Value 'fixture secret'
+        $null = New-Item -ItemType Directory -Path $cache -Force
+        $link = Join-Path $cache 'linked-agent'
+        $null = New-Item -ItemType Junction -Path $link -Target $outside
+        Invoke-Check $engine ClearCache 2
+        if (-not (Test-Path -LiteralPath (Join-Path $outside 'auth.json'))) { throw 'Cache cleanup followed a junction' }
+        Remove-Item -LiteralPath $link -Force
+        Invoke-Check $engine ClearCache 1
         Write-Host "PASS $([IO.Path]::GetFileName($engine)): self exclusion, path boundaries, other installs, backend stop, literal paths, query errors."
+        Write-Host 'PASS generated page cache cleanup: scope, retained settings, nested junction refusal.'
     }
     if ($NsisDirectory) {
         $compiler = Join-Path $NsisDirectory 'Bin/makensis.exe'
@@ -77,6 +95,9 @@ SilentInstall silent
 Section
   StrCpy $INSTDIR "@INSTALL@"
   !insertmacro customCheckAppRunning
+  !ifndef BUILD_UNINSTALLER
+    !insertmacro customInstall
+  !endif
   FileOpen $0 "$INSTDIR\@MARKER@" w
   FileWrite $0 "passed"
   FileClose $0

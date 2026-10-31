@@ -1,5 +1,5 @@
 param(
-    [Parameter(Mandatory = $true)][ValidateSet('Check', 'Stop')][string]$Action,
+    [Parameter(Mandatory = $true)][ValidateSet('Check', 'Stop', 'ClearCache')][string]$Action,
     [Parameter(Mandatory = $true)][string]$InstallDirectory,
     [Parameter(Mandatory = $true)][string]$AppExecutable,
     [Parameter(Mandatory = $true)][int]$InstallerProcessId
@@ -20,6 +20,28 @@ try {
     }
     $appPath = [IO.Path]::Combine($installRoot, $AppExecutable)
     $resourcePrefix = [IO.Path]::Combine($installRoot, 'resources') + '\'
+    if ($Action -eq 'ClearCache') {
+        # Interrupted, unregistered installs can retain HTML for the previous
+        # build. Refuse every reparse point before removing only this cache.
+        $cache = $installRoot
+        foreach ($segment in @('', 'resources', 'server', '.desktop', 'next', 'server', 'route-cache')) {
+            if ($segment) { $cache = [IO.Path]::Combine($cache, $segment) }
+            if (-not (Test-Path -LiteralPath $cache)) { exit 1 }
+            $entry = Get-Item -LiteralPath $cache -Force
+            if (-not $entry.PSIsContainer -or ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint)) { throw 'Unsafe cache path' }
+        }
+        if (-not $cache.StartsWith($installRoot + '\', [StringComparison]::OrdinalIgnoreCase)) { throw 'Cache outside installation' }
+        $pending = [Collections.Generic.Stack[string]]::new()
+        $pending.Push($cache)
+        while ($pending.Count -gt 0) {
+            foreach ($entry in Get-ChildItem -LiteralPath $pending.Pop() -Force) {
+                if ($entry.Attributes -band [IO.FileAttributes]::ReparsePoint) { throw 'Linked cache entry' }
+                if ($entry.PSIsContainer) { $pending.Push($entry.FullName) }
+            }
+        }
+        Remove-Item -LiteralPath $cache -Recurse -Force
+        exit 1
+    }
     function Test-OwnedProcess($process) {
         if ($process.ProcessId -eq $InstallerProcessId -or -not $process.ExecutablePath) { return $false }
         $image = [string]$process.ExecutablePath

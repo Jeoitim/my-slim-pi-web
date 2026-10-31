@@ -36,9 +36,11 @@ for (const [index, source] of installers.entries()) {
   const installer = resolve(source);
   const root = join(area, index === 0 ? "before" : "after");
   await mkdir(root);
-  await extract(["e", installer, "-y", `-o${root}`, "$PLUGINSDIR/app-64.7z"]);
+  await extract(["e", installer, "-y", `-o${root}`, "$PLUGINSDIR/app-64.*"]);
+  const packages = (await readdir(root)).filter(name => /^app-64\.(7z|zip)$/.test(name));
+  if (packages.length !== 1) throw new Error("Expected exactly one x64 application archive");
   const began = performance.now();
-  await extract(["x", join(root, "app-64.7z"), "-y", `-o${join(root, "app")}`]);
+  await extract(["x", join(root, packages[0]), "-y", `-o${join(root, "app")}`]);
   const extractMs = Math.round(performance.now() - began);
   const sample = { installer, installerBytes: (await stat(installer)).size, extractMs, ...await inventory(join(root, "app")) };
   samples.push(sample);

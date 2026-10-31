@@ -93,11 +93,15 @@ Linux 使用 export / read -rsp。不要将明文密码放入源码、命令行�
 
 启动时 Node 后端与原生窗口并行初始化。窗口先显示本地 `loading.html`，仅保留居中品牌图标、产品名称标题和不确定进度条，不显示说明文字或页脚。进度条保留无障碍标签和减少动态效果时的静态回退。服务、健康检查和必要配置都就绪后自动导航到 WebUI。正常启动不显示 Retry，不执行一次多余的停止/重启；真实失败才切到错误页。健康请求使用原生 loopback HTTP，终端、文件预览、子代理预览和设置面板按需加载，不在聊天首页初始化 xterm 等可选模块。
 
-版本采用 `<上游基准版本>-jeoitim.<修订号>`，当前开发版本为 `0.13.0-jeoitim.3`。同一上游发布版本下递增修订号，完成新上游发布版本的独立集成 PR 后，基准更新并从 `.1` 开始。页面不请求上游更新接口；即使直接调用 `/api/app-update`，fork 版本也只返回本地版本，不连接 npm 上游或推荐上游安装包。此规则同时适用于本 fork 的 Web 版。
+版本采用 `<上游基准版本>-jeoitim.<修订号>`，当前开发版本为 `0.13.0-jeoitim.2`。同一上游发布版本下递增修订号，完成新上游发布版本的独立集成 PR 后，基准更新并从 `.1` 开始。页面不请求上游更新接口；即使直接调用 `/api/app-update`，fork 版本也只返回本地版本，不连接 npm 上游或推荐上游安装包。此规则同时适用于本 fork 的 Web 版。
 
 首版无自动更新器。退出应用后安装新版本；卸载保留 userData，安装不覆盖 AgentRoot、凭据、模型、技能和会话。回退用此前验证的安装包并保留用户目录。不要用上游 pi-web 自动更新覆盖 fork。首版安装包未签名，发布签名与可信下载另行处理。
 
 Windows 安装器通过 electron-builder 的 `customCheckAppRunning` 钩子检查进程：仅匹配目标目录的主程序，以及该目录 `resources/` 内的后端和辅助程序，并排除安装器自身。安装器、卸载器、相邻目录和其他位置的同名应用不算本次安装的运行实例。使用系统 PowerShell、禁用用户 profile，目录作为独立参数传入。检查失败单独提示重试；发现实际运行实例后，交互安装仍需确认关闭，静默安装则取消并返回非零状态，不自动停止任务。检测与停止均按路径限定，停止前复核 PID、路径和创建时间。见 [安装器验证](desktop-installer-validation.md)。
+
+本轮修复按用户要求保持 `0.13.0-jeoitim.2`。安装资源采用 `useZip: true`、`differentialPackage: false`，使用安装器自带的直接解压及结果检查，避开 7z 临时目录复制失败却报告“应用无法关闭”、最后重试忽略错误的分支。该项目没有差分自动更新器。完整安装回归为 `node electron/scripts/installer-upgrade-check.mjs`；加 `--payload <已打包目录>` 使用真实产品资源，检查旧安装升级、同版本重装和中断安装后的恢复。测试只使用随机应用标识、独立目录和安装登记，不修改个人应用。
+
+原 Noto Sans Mono 字体的七个子集保存在 `public/fonts/noto-sans-mono/`，保留原字节、100–900 字重、Unicode 范围和回退度量，并附 SIL OFL 授权。`app/noto-font.css` 沿用原字体声明，生产构建无需访问 Google Fonts；中文继续使用原有微软雅黑 / Noto Sans SC 回退。
 
 上游维护遵循 [AGENTS.md](../AGENTS.md)：`upstream` 纯跟踪 → 独立集成 PR → `my-slim-pi-web`。重点接点是 page/layout、DesktopShell/DesktopSettings、SettingsPanel、settings-navigation、remote-access 和 next.config；不复制 rpc-manager 或权限系统。
 
