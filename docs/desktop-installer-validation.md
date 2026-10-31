@@ -57,7 +57,9 @@
 
 本机 electron-builder 26.15.3 在 `computeScriptAndSignUninstaller` 中运行 `BUILD_UNINSTALLER` 中间安装器时，只传 `{ __COMPAT_LAYER: "RunAsInvoker" }`；Windows 分支的 `getProcessEnv` 用它替换整个环境，NSIS 丢失 `TEMP/TMP`，报 `Error writing temporary file`。本次用临时 `--import` 预加载把 `process.env` 合并进该次 exec 完成打包；未修改 `node_modules`，未提交该补丁。若重现该错误，先检查环境传递。
 
-受限 shell 中测试安装器时，`TEMP/TMP` 必须是安装器可写的短路径；旧卸载器镜像路径仍受 248/260 限制。最终真实升级使用 `C:\Users\timrt\AppData\Local\T`（medium 标签，30 字符），避免把旧卸载器复制到 low 标签临时目录而无法操作 medium 安装。
+工作区产物会继承 **Low Mandatory Level**。安装包保持 Low 时，用户正常双击会在 NSIS 初始化阶段报 `Error writing temporary file. Make sure your temp folder is valid.`，界面尚未出现；这与旧卸载 exit 2 不同。已对 `dist-desktop` 包执行 `icacls … /setintegritylevel M`，并在 `C:\Users\timrt\Downloads` 保留同哈希副本（`ab9ee22e…`）。随后用该包做真实同版本重装：exit 0，116.5 秒，安装仍为 `.2`、16,040 个文件、卸载器 `0038c6…`，GUI 初始化正常。
+
+受限 shell 中测试安装器时，`TEMP/TMP` 必须是安装器可写的短路径；旧卸载器镜像路径仍受 248/260 限制。最终测试使用 `C:\Users\timrt\AppData\Local\T`（medium 标签，30 字符），避免把旧卸载器复制到 low 标签临时目录而无法操作 medium 安装。
 
 ## 清理
 

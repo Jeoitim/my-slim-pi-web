@@ -54,6 +54,8 @@
 
 本机 electron-builder 26.15.3 在 `computeScriptAndSignUninstaller` 中通过 `WineVmManager.exec` 运行 `BUILD_UNINSTALLER` 中间安装器时，只传 `{ __COMPAT_LAYER: "RunAsInvoker" }`；Windows 分支的 `getProcessEnv` 会用它**替换**整个环境，导致 NSIS 丢失 `TEMP/TMP`，报 “Error writing temporary file”。本次用临时 `--import` 预加载把 `process.env` 合并进该次 exec 后才完成打包；未修改 node_modules，也未提交该预加载。若下次打包重现该错误，先查这一点。
 
+工作区产物还会继承 **Low Mandatory Level**。安装包若保持 Low，用户正常双击时 NSIS 以低完整性运行，无法写入普通用户 TEMP，在界面出现前就报 `Error writing temporary file. Make sure your temp folder is valid.`。这不是旧卸载/进程问题。交付前对安装包执行 `icacls <setup>.exe /setintegritylevel M`（文件所有者可做），或复制到 Downloads/用户目录并核对 `icacls`；本次 `dist-desktop` 包已提升为 Medium，`Downloads` 保留同哈希副本。两者 SHA-256 均为 `ab9ee22e…`。
+
 另外，在受限/低完整性 shell 中测试安装器时，必须把 `TEMP/TMP` 指到安装器可写的短路径；本次最终测试用 `C:\Users\timrt\AppData\Local\T`（medium 标签，30 字符），避免旧卸载器镜像路径再次逼近 248/260 限制，也避免把旧卸载器复制到 low 标签临时目录后无法操作 medium 安装。
 
 ## 代码入口
