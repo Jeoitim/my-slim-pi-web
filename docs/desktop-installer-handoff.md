@@ -1,75 +1,71 @@
-# Windows 安装失败交接（未解决）
+# Windows 安装失败交接（已定位并修复）
 
-## 最新用户反馈
+## 结果
 
-最终交付的 `.2` 包仍被用户报告无法安装。窗口提示“My Slim Pi Web 无法关闭。请手动关闭它，然后单击重试以继续。”；用户进一步说退出时还有类似 **`failed to uninstall old version`** 的标语。这是用户转述，完整第二条文案和错误码尚未取得。
+`.1 → .2` 的真实升级已在本机通过：旧卸载器先复现 exit 2，清理旧构建产物后同一旧卸载器 exit 0；最终 `.2` 安装器在真实 `.1` 安装上静默升级 exit 0，注册表、快捷方式、安装文件与卸载器均更新为 `.2`，安装后的应用启动并完成 backend ready。版本保持 `0.13.0-jeoitim.2`。
 
-![用户最新实测失败截图](images/windows-installer-jeoitim2-failure.png)
+这不是隔离测试的推断：旧二进制是用户实际安装目录中的那份，真实旧卸载器的失败与修复都直接复现过。
 
-用户给出的安装目录为 `C:\Users\timrt\AppData\Local\Programs\MySlimPiWeb`。之前检查时宿主为 `.1`，但后续安装尝试可能改变现场，必须重新读取，不要沿用旧状态。
+## 根因
 
-## 正确的代码位置
+`0.13.0-jeoitim.1` 的 payload 在 `resources/server` 下带有嵌套构建产物：
 
-- 主开发 checkout：`C:/Users/timrt/Documents/02MyDevelopment/my-slim-pi-web`。
-- 分支：`my-slim-pi-web`，安装修订基于提交 `d8807d1`；本交接另作文档提交。
-- 会话默认目录可能是 `C:/Users/timrt/.codex/worktrees/upstream-baseline-validation/my-slim-pi-web`，它仍是 `2a330cc` 的 detached 旧验证工作树，不能拿它代替当前产品源码。
-- 开始先查 `git status`、分支、HEAD 和 worktree 清单。不要擅自更新旧验证工作树或上游镜像。
+- `resources/server/.desktop/server/...`（其中再含 `dist-desktop/win-unpacked/...`）
+- `resources/server/dist-desktop/...`
+- `resources/server/.local/...`
 
-## 当前构建指纹
+旧安装器调用 stock electron-builder 卸载器时带 `--updated`，`un.atomicRMDir` 会把每个文件先镜像到 `$PLUGINSDIR/old-install`。最深镜像目录达到 **250 字符**；Windows `CreateDirectoryW` 在超过 **248 字符**时失败（`ERROR_FILENAME_EXCED_RANGE` 206），随后的 `Rename` 失败（`ERROR_PATH_NOT_FOUND` 3），section `Abort`，卸载器返回 **2**。外层 `uninstallOldVersion` 重试 5 次后显示 `$(appCannotBeClosed)`；用户取消后 `handleUninstallResult` 显示 `$(uninstallFailed): 2`。
 
-用户要求继续保持 **`0.13.0-jeoitim.2`**，不要推进 `.3`。
+证据：
 
-- 安装包：`dist-desktop/My.Slim.Pi.Web.Setup.0.13.0-jeoitim.2.exe`。
-- 最后交付大小：291,696,271 字节。
-- SHA-256：`c83917a4b220491c6dcb0c2e3b3d333fbb97e13655fc11f69adf7ab0e195a269`。
-- Web BUILD_ID：`f1mbYdzsmzq4cenza2gjL`。
-- 窗口中的 `.2` 不足以证明实跑文件就是这一构建，先核对用户实际执行文件的路径、大小和 SHA。
-- 失败的 `.3` 在 `dist-desktop/previous/failed-jeoitim.3/`；原 `.2` 在 `dist-desktop/previous/0.13.0-jeoitim.2-original/`。不要误交付旧包。
+- 真实旧卸载器：`Uninstall MySlimPiWeb.exe`，161,102 字节，SHA-256 `e497ffbd90516276012d28b72750443b6d7cdd67a2555a86d19288a73ac0978c`，FileVersion `0.13.0-jeoitim.1`。
+- 直接按安装器参数执行（`/S /KEEP_APP_DATA /currentuser --updated _?=...`）：exit **2**，约 18 秒，16,081 个文件、HKCU 两个键、两个快捷方式均保留（restore 后中止）。
+- 复制旧卸载器或传 `_?=<副本>` 不能把它隔离到副本：`un.onInit` 的 `initMultiUser` 会用 `HKCU\Software\a8955933-…\InstallLocation` 覆盖 `$INSTDIR`。测试副本必须临时改该登记值，结束后恢复；否则实际操作的仍是真实安装和产品登记。
+- 同样的单文件 / 仅根目录文件测试 exit 0；说明不是进程占用或文件本身。
+- Win32 复刻 `atomicRMDir`：在 `.desktop\server\...\upstream013-agent\mcp.json` 处 `CreateDirectory` 返回 206、`MoveFileEx` 返回 3；最大目标目录 250。
+- 删掉三个旧构建产物子树后，同一真实旧卸载器对副本 exit **0**，删除副本、两个注册表键和快捷方式。
 
-## 已确认与尚未确认
+## 修复
 
-已确认源码事实：electron-builder 26.15.3 多处复用 `appCannotBeClosed`，所以它不等于“确实有应用在运行”。当前 ZIP 新包已避开新的 7z 临时复制分支，但仍可能调用已经安装的旧卸载器。
+- `electron/installer/app-processes.ps1`：新增 `-Action RepairLegacy`。仅当 `resources/server/.desktop/server/dist-desktop` 或 `resources/server/dist-desktop` 存在（`.1` 的特征）时，删除三个已知旧构建产物子树；使用 `\\?\`/`\\?\UNC\` 长路径，拒绝 reparse point，校验路径必须位于 `resources/server` 下。日志：`%TEMP%\pi-installer-legacy-repair.log`。成功（包括无旧树）exit 1，失败 exit 2。
+- `electron/installer/process-check.nsh`：`customCheckAppRunning` 在进程检查后、`uninstallOldVersion` 之前调用仅安装器编译的 `PiRepairLegacyInstall`。修复失败时显示独立文案（中/英/繁）并 exit 2，不再落入旧的 5 次重试 / “应用无法关闭”。
+- 新 `.2` 卸载器不编译该修复；它只保留原有进程检查。新 payload 本身干净，不再生成这些嵌套目录。
+- 回归：`electron/scripts/installer-legacy-repair.ps1`（PowerShell 5.1/7、深层路径、保留 `keep.txt`/`.desktop/next`、无特征空 `.desktop/server` 不误删、junction 拒绝）。
 
-最新退出提示与 `include/installUtil.nsh` 的 `handleUninstallResult` 吻合：当旧卸载器结果 `$R0 != 0` 时，显示 `$(uninstallFailed): $R0`，再退出。`messages.yml` 的英文为 `Failed to uninstall old application files. Please try running the installer again.`。应优先验证这个链路；转述本身还不能证明是哪个文件、权限、路径或进程导致失败。
+## 真实升级验证
 
-以前读检查时没有发现目标路径的运行进程，全部 16,081 个文件可打开读写；这些只说明检查当时的状态，不能排除安装时的瞬时占用，也不能代替实际卸载器日志。此前没有在用户真实目录执行覆盖安装或卸载。
+1. 旧卸载器直接执行：exit 2（复现）。
+2. 修复旧树后，同一旧卸载器对副本：exit 0。
+3. 第一次 medium 运行：repair 日志确认三个旧子树已删除；但旧卸载器被复制到当时的 low 标签临时目录，无法操作 medium 安装，exit 2。
+4. 将短临时目录改回 medium 后重跑：exit 0，100.5 秒（旧树已不存在，repair 为 no-op）；安装后文件 16,040、840,470,511 字节。
+5. 安装后：DisplayVersion `0.13.0-jeoitim.2`；卸载器 FileVersion `.2`，SHA-256 `0038c6e808685433c665e32f6b6a8c958044f8cd85ac857c961b456ca53393d4`；无旧嵌套路径；桌面/开始菜单快捷方式存在。
+6. 启动安装后的 `MySlimPiWeb.exe`：窗口出现，`startup-history.json` 更新，`backendReadyMs` 7,073、`healthReadyMs` 7,109；关闭后无残留进程。
 
-此前那份 `Uninstall MySlimPiWeb.exe` 为 161,102 字节，SHA-256 为 `e497ffbd90516276012d28b72750443b6d7cdd67a2555a86d19288a73ac0978c`。这是旧观测指纹，后续安装尝试可能改动它，当前必须重新核对。
+## 当前产物
 
-**具体 Windows 根因仍未知。不得写“已经证明是进程误判”“已证明是 7z 复制”或“已实机修复”。**
+- 安装包：`dist-desktop/My.Slim.Pi.Web.Setup.0.13.0-jeoitim.2.exe`
+- 大小：**291,690,962** 字节
+- SHA-256：`ab9ee22e14c7602f2f10e2e5994e57ef1a221c6913647db95d8adfd4fb279283`
+- Web BUILD_ID：`a_5_tZs-pzarHFdycEvcd`
+- 同名 `.exe.sha256` 已更新。
+- 失败的旧包保留在 `dist-desktop/previous/failed-jeoitim.2-c83917a4/`：291,696,271 字节，SHA-256 `c83917a4b220491c6dcb0c2e3b3d333fbb97e13655fc11f69adf7ab0e195a269`。不要误交付。
 
-## 已做过的改动与验证边界
+## 构建环境注意
 
-1. `154611c`：添加 `electron/installer/process-check.nsh` / `app-processes.ps1`，使用无 profile 的系统 PowerShell，按目标目录限制进程，排除自身，停止前复核 PID/路径/创建时间。用户后来仍失败。
-2. `20a3d70`：保存原 Noto Sans Mono 字体与 OFL，解决在线字体下载导致构建失败。它与旧版本无法卸载的根因无关，不要再因此改字体或界面。
-3. `d8807d1`：`nsis.useZip = true` 且 `differentialPackage = false`；添加受保护的旧页面缓存清理；版本恢复并固定 `.2`。用户最新反馈说明这仍未解决原安装。
-4. `installer-process-check.ps1` 验证了进程和缓存钩子，含 PowerShell 5.1/7、字面路径、链接拒绝和静默取消。
-5. `installer-upgrade-check.mjs` 使用随机应用 ID、独立可执行文件名、独立登记和目录重编测试安装器。完整 16,035 个资源的旧版升级、同版本重装、无登记残留修复均通过；缓存逻辑又通过最小载荷三场景。
-6. 最终包内容、宿主/后端版本、240 项 Web 静态资源、9 项字体/授权资源核对通过。打包运行目录的原生设置/字体验收也通过。
+本机 electron-builder 26.15.3 在 `computeScriptAndSignUninstaller` 中通过 `WineVmManager.exec` 运行 `BUILD_UNINSTALLER` 中间安装器时，只传 `{ __COMPAT_LAYER: "RunAsInvoker" }`；Windows 分支的 `getProcessEnv` 会用它**替换**整个环境，导致 NSIS 丢失 `TEMP/TMP`，报 “Error writing temporary file”。本次用临时 `--import` 预加载把 `process.env` 合并进该次 exec 后才完成打包；未修改 node_modules，也未提交该预加载。若下次打包重现该错误，先查这一点。
 
-这些测试没有执行用户当前安装目录内那份真实旧卸载器，也没有复用用户的真实产品登记。**重编的测试旧卸载器不能替代已安装的旧二进制。** 之前据此宣布修复的验证范围不足。
+另外，在受限/低完整性 shell 中测试安装器时，必须把 `TEMP/TMP` 指到安装器可写的短路径；本次最终测试用 `C:\Users\timrt\AppData\Local\T`（medium 标签，30 字符），避免旧卸载器镜像路径再次逼近 248/260 限制，也避免把旧卸载器复制到 low 标签临时目录后无法操作 medium 安装。
 
-## 下一会话优先工作
+## 代码入口
 
-1. 保留失败现场和二进制指纹，核对实跑安装包。取得退出时的完整 `uninstallFailed` 文案及冒号后的结果码，区分外层安装器和旧卸载器自己的弹窗。
-2. 按实际安装包的 APP_ID / APP_GUID 查它真正使用的 HKCU/HKLM、32/64 位登记；记录 `InstallLocation`、`UninstallString`、当前用户/提权上下文。此前查不到某个预期 GUID，不能推断没有其他登记。
-3. 跟踪 `uninstallOldVersion` 实际选择的路径：临时 `old-uninstaller.exe` 或原地降级；保存旧卸载器版本/哈希、传入参数（尤其 `/S`、`--updated`、`_?=`）、启动失败还是非零退出，以及每次返回码。
-4. 如果进入旧卸载器，进一步定位它的进程检查、`un.atomicRMDir` 文件迁移、恢复和目录删除。采集失败文件与 Win32 错误，不要凭通用文案猜测“文件忙”或跨盘。
-5. 当前版本的新 hook 不能修补旧卸载器。需要测试旧二进制时，先弄清它编译进去的登记、快捷方式及用户数据路径。仅复制 exe 并加 `_?=` 不能保证隔离，不得误删个人登记或关闭其他应用。
-6. 基于证据做小范围修复，然后以能覆盖真实旧卸载器/登记条件的场景验收。保留现有独立测试作为回归，但不要再次仅凭其通过宣布用户故障已解决。
+- `electron/installer/process-check.nsh`：`PiRepairLegacyInstall`、`customCheckAppRunning`。
+- `electron/installer/app-processes.ps1`：`RepairLegacy`、`ClearCache`、`Check`/`Stop`。
+- `electron/scripts/installer-legacy-repair.ps1`：回归。
+- `node_modules/app-builder-lib/templates/nsis/include/installUtil.nsh`：`uninstallOldVersion` / `handleUninstallResult`（未改）。
+- `node_modules/app-builder-lib/templates/nsis/uninstaller.nsh`：stock `un.atomicRMDir`（未改）。
 
-重点代码入口：
+## 边界
 
-- `electron/installer/process-check.nsh`：`pi_stop` 失败重试也会显示同一文案。
-- `electron/installer/app-processes.ps1`：Check / Stop / ClearCache。
-- `node_modules/app-builder-lib/templates/nsis/include/installUtil.nsh`：`uninstallOldVersion` 重试、`handleUninstallResult`。
-- `node_modules/app-builder-lib/templates/nsis/uninstaller.nsh`：旧版启动检查、`un.atomicRMDir`、恢复及卸载段。
-- `node_modules/app-builder-lib/templates/nsis/messages.yml`：文案映射。
-- `electron-builder.cjs` / `electron/scripts/pack.mjs`：真实打包配置与 include 路径。
-
-## 构建与资料保留
-
-- 先读根 `AGENTS.md`、`docs/agents/client-platform.md`、`docs/desktop.md` 和 `docs/desktop-installer-validation.md`。
-- 桌面构建使用 `.desktop/`，不污染开发 `.next/`。当前 `.desktop`、`.local`、未打包运行目录已按通用脚本清除；源码、依赖、安装包及校验文件保留。旧临时日志不再存在，以上结论和本次截图已持久化。
-- `clean-local.ps1` 固定为仓库通用入口，不为排障临时重写；根因未明时先保存关键日志和指纹，再清理。
-- 此会话按用户要求只记录经验和交接，不继续修改安装器、不重新打包、不动用户真实安装。下一会话继续解决安装问题，保持 `.2`；远程推送、发布仍遵循原授权要求。
+- 没有推送、发布或改 GitHub Release。
+- 没有修改用户数据（AgentRoot/设置）；升级只替换程序文件和产品登记。
+- 其他机器/其他旧 payload 变体未逐一验证；修复只匹配已复现的 `.1` 特征，不认识的树保持原样。

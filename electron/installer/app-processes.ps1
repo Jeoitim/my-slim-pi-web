@@ -1,5 +1,5 @@
 param(
-    [Parameter(Mandatory = $true)][ValidateSet('Check', 'Stop', 'ClearCache')][string]$Action,
+    [Parameter(Mandatory = $true)][ValidateSet('Check', 'Stop', 'ClearCache', 'RepairLegacy')][string]$Action,
     [Parameter(Mandatory = $true)][string]$InstallDirectory,
     [Parameter(Mandatory = $true)][string]$AppExecutable,
     [Parameter(Mandatory = $true)][int]$InstallerProcessId
@@ -8,6 +8,11 @@ param(
 # Windows PowerShell 5.1 is bundled with Windows; do not depend on user profiles,
 # PATH, a separately installed pwsh, or evaluation of directory names as code.
 $ErrorActionPreference = 'Stop'
+$repairLog = [IO.Path]::Combine([IO.Path]::GetTempPath(), 'pi-installer-legacy-repair.log')
+function Get-LongPath([string]$Path) {
+    if ($Path.StartsWith('\\')) { return '\\?\UNC\' + $Path.Substring(2) }
+    return '\\?\' + $Path
+}
 try {
     if ($InstallDirectory -notmatch '^(?:[A-Za-z]:[\\/]|\\\\[^\\]+\\[^\\]+)' -or
         $InstallDirectory.StartsWith('\\.\') -or $InstallDirectory.StartsWith('\\?\') -or
@@ -42,6 +47,46 @@ try {
         Remove-Item -LiteralPath $cache -Recurse -Force
         exit 1
     }
+    if ($Action -eq 'RepairLegacy') {
+        # 0.13.0-jeoitim.1 packaged nested build output below the Next server
+        # root. The stock NSIS uninstaller mirrors every file into its temp
+        # directory; those paths exceed the 248-character CreateDirectory
+        # limit, so it aborts and the new installer retries the old
+        # uninstaller forever. Delete only the three legacy build-output
+        # subtrees, with long-path support, before the old uninstaller runs.
+        $serverRoot = [IO.Path]::Combine($installRoot, 'resources', 'server')
+        $legacy = @(
+            [pscustomobject]@{ Relative = 'resources\server\.desktop\server'; Full = [IO.Path]::Combine($serverRoot, '.desktop', 'server') },
+            [pscustomobject]@{ Relative = 'resources\server\dist-desktop'; Full = [IO.Path]::Combine($serverRoot, 'dist-desktop') },
+            [pscustomobject]@{ Relative = 'resources\server\.local'; Full = [IO.Path]::Combine($serverRoot, '.local') }
+        )
+        # The nested dist-desktop copy (or the top-level one) is the signature
+        # of the affected legacy payload. A clean install has neither, so a
+        # future legitimate .desktop\server directory is left alone.
+        if (-not [IO.Directory]::Exists((Get-LongPath ([IO.Path]::Combine($legacy[0].Full, 'dist-desktop')))) -and
+            -not [IO.Directory]::Exists((Get-LongPath $legacy[1].Full))) { exit 1 }
+        $removed = New-Object 'Collections.Generic.List[string]'
+        foreach ($entry in $legacy) {
+            $full = $entry.Full
+            if (-not $full.StartsWith($serverRoot + '\', [StringComparison]::OrdinalIgnoreCase)) {
+                throw 'Legacy path outside server resources'
+            }
+            $prefixed = Get-LongPath $full
+            if (-not [IO.Directory]::Exists($prefixed)) { continue }
+            if (([IO.File]::GetAttributes($prefixed) -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+                throw 'Linked legacy path'
+            }
+            [IO.Directory]::Delete($prefixed, $true)
+            if ([IO.Directory]::Exists($prefixed)) { throw 'Legacy path remains' }
+            $removed.Add($entry.Relative)
+        }
+        try {
+            Add-Content -LiteralPath $repairLog -ErrorAction Stop -Value ((Get-Date).ToString('o') + ' removed ' + ($removed -join '; '))
+        } catch {
+            # Diagnostics must not decide whether the repair succeeded.
+        }
+        exit 1
+    }
     function Test-OwnedProcess($process) {
         if ($process.ProcessId -eq $InstallerProcessId -or -not $process.ExecutablePath) { return $false }
         $image = [string]$process.ExecutablePath
@@ -74,5 +119,10 @@ try {
     exit 1
 } catch {
     # A failed process query is distinct from a positive running-app result.
+    try {
+        Add-Content -LiteralPath $repairLog -ErrorAction Stop -Value ((Get-Date).ToString('o') + ' ERROR ' + $_.Exception.Message)
+    } catch {
+        # Reports must not change the exit status.
+    }
     exit 2
 }

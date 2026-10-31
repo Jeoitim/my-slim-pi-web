@@ -2,12 +2,13 @@
 
 本文件前部是本 fork 的维护要求，后部保留 Pi Web 的开发与架构参考。修改前先确认当前 checkout、分支和提交；会话默认目录可能是旧的 detached 验证工作树，不代表开发主线。具体工作目录和当前交接见 [安装器交接](docs/desktop-installer-handoff.md)。
 
-## 当前阻塞：Windows 安装仍未解决
+## Windows 安装修复记录（0.13.0-jeoitim.2）
 
-- 用户再次实测 `0.13.0-jeoitim.2` 新包失败，仍显示“应用无法关闭”；退出时还有类似 `failed to uninstall old version` 的提示（用户转述，完整原文及错误码待采集）。**不得把隔离测试通过写成实机修复成功。**
-- 此退出提示与 NSIS `handleUninstallResult` 的旧卸载器非零退出分支吻合。下一轮优先记录实际旧卸载器、参数、安装登记和退出码，确定失败操作；当前只确认排查方向，具体 Windows 根因尚未证实。
-- 新包已经使用 ZIP 直接解压，用户仍报错，不能继续把 7z 复制当成已确认根因。新包的钩子也不会改写已安装 `.1` 旧卸载器的逻辑。源码位置、已尝试方案和证据边界见 [交接](docs/desktop-installer-handoff.md) 与 [验证记录](docs/desktop-installer-validation.md)。
-- 本轮版本固定为 `0.13.0-jeoitim.2`，未经用户要求不要递增。同版本重打必须记录 SHA-256、文件大小和 BUILD_ID；仅凭版本文字不能区分具体安装包。
+- 已定位并修复旧卸载链路：`.1` 的 `resources/server/.desktop/server` / `dist-desktop` 嵌套构建产物使 stock `un.atomicRMDir` 的临时镜像目录超过 248 字符，`CreateDirectoryW` 失败，旧卸载器返回 2；外层重试 5 次后显示“应用无法关闭”，取消时显示 `uninstallFailed: 2`。
+- 修复：`app-processes.ps1` 新增 `RepairLegacy`，`process-check.nsh` 在 `uninstallOldVersion` 之前、仅安装器调用 `PiRepairLegacyInstall`，用 `\\?\` 删除三个已知旧构建产物子树并拒绝 reparse point；新 `.2` 卸载器不执行该修复。
+- 真实 `.1 → .2` 升级已验证：旧卸载器先复现 exit 2，清理后同一旧二进制 exit 0；最终 `.2` 安装器静默升级真实 `.1` 安装 exit 0，版本、卸载器、文件与启动均通过；安装后 app backend ready。不能再把本轮结论写成“仅隔离测试通过”。
+- 当前包：`dist-desktop/My.Slim.Pi.Web.Setup.0.13.0-jeoitim.2.exe`，291,690,962 字节，SHA-256 `ab9ee22e14c7602f2f10e2e5994e57ef1a221c6913647db95d8adfd4fb279283`，BUILD_ID `a_5_tZs-pzarHFdycEvcd`。失败旧包保留在 `dist-desktop/previous/failed-jeoitim.2-c83917a4/`（291,696,271 字节，`c839…`），不要误交付。
+- 版本仍固定为 `0.13.0-jeoitim.2`；同版本重打必须记录大小、SHA-256 和 BUILD_ID。构建环境注意：electron-builder 26.15.3 运行 `BUILD_UNINSTALLER` 中间安装器时可能丢失 `TEMP/TMP`（本机用临时环境预加载绕过，未改依赖、未提交）；详见 [验证记录](docs/desktop-installer-validation.md)。
 
 ## 本 fork 的产品与兼容边界
 

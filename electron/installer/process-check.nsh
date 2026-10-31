@@ -9,6 +9,12 @@
 # Supported electron-builder hook; never patch its generated installer templates.
 !macro customCheckAppRunning
   Call ${PI_CHECK_PREFIX}PiCheckAppRunning
+  !ifndef BUILD_UNINSTALLER
+    # Runs before uninstallOldVersion: the 0.13.0-jeoitim.1 payload nests build
+    # output deep enough that the stock uninstaller's temp mirror cannot create
+    # its directories, so it aborts and this installer retries forever.
+    Call PiRepairLegacyInstall
+  !endif
 !macroend
 
 Function ${PI_CHECK_PREFIX}PiCheckAppRunning
@@ -52,6 +58,33 @@ Function ${PI_CHECK_PREFIX}PiCheckAppRunning
   Pop $1
   Pop $0
 FunctionEnd
+
+!ifndef BUILD_UNINSTALLER
+Function PiRepairLegacyInstall
+  Push $0
+  Push $1
+  Push $2
+  InitPluginsDir
+  File "/oname=$PLUGINSDIR\pi-app-processes.ps1" "${PI_PROCESS_HELPER}"
+  System::Call 'kernel32::GetCurrentProcessId() i.r1'
+  nsExec::Exec '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$PLUGINSDIR\pi-app-processes.ps1" -Action RepairLegacy -InstallDirectory "$INSTDIR" -AppExecutable "${PRODUCT_FILENAME}.exe" -InstallerProcessId $1'
+  Pop $0
+  StrCmp $0 1 pi_repair_done
+  StrCpy $2 "The previous installation contains files that cannot be removed automatically. Close the application, then run the installer again."
+  ${If} $LANGUAGE == 2052
+    StrCpy $2 "旧版本安装目录中有文件无法自动清理。请关闭应用，然后重新运行安装程序。"
+  ${ElseIf} $LANGUAGE == 1028
+    StrCpy $2 "舊版本安裝目錄中有檔案無法自動清理。請關閉應用程式，然後重新執行安裝程式。"
+  ${EndIf}
+  MessageBox MB_OK|MB_ICONSTOP "$2"
+  SetErrorLevel 2
+  Quit
+  pi_repair_done:
+  Pop $2
+  Pop $1
+  Pop $0
+FunctionEnd
+!endif
 
 !ifndef BUILD_UNINSTALLER
 !macro customInstall
