@@ -1,4 +1,33 @@
-# Pi Web - Development Notes
+# My Slim Pi Web — 本项目维护约定
+
+本文件前部是本 fork 的维护要求，后部保留 Pi Web 的开发与架构参考。修改前先确认当前 checkout、分支和提交；会话默认目录可能是旧的 detached 验证工作树，不代表开发主线。具体工作目录和当前交接见 [安装器交接](docs/desktop-installer-handoff.md)。
+
+## 当前阻塞：Windows 安装仍未解决
+
+- 用户再次实测 `0.13.0-jeoitim.2` 新包失败，仍显示“应用无法关闭”；退出时还有类似 `failed to uninstall old version` 的提示（用户转述，完整原文及错误码待采集）。**不得把隔离测试通过写成实机修复成功。**
+- 此退出提示与 NSIS `handleUninstallResult` 的旧卸载器非零退出分支吻合。下一轮优先记录实际旧卸载器、参数、安装登记和退出码，确定失败操作；当前只确认排查方向，具体 Windows 根因尚未证实。
+- 新包已经使用 ZIP 直接解压，用户仍报错，不能继续把 7z 复制当成已确认根因。新包的钩子也不会改写已安装 `.1` 旧卸载器的逻辑。源码位置、已尝试方案和证据边界见 [交接](docs/desktop-installer-handoff.md) 与 [验证记录](docs/desktop-installer-validation.md)。
+- 本轮版本固定为 `0.13.0-jeoitim.2`，未经用户要求不要递增。同版本重打必须记录 SHA-256、文件大小和 BUILD_ID；仅凭版本文字不能区分具体安装包。
+
+## 本 fork 的产品与兼容边界
+
+- Web UI 和桌面应用依赖 [My Slim Pi CLI](https://github.com/Jeoitim/my-slim-pi)，共享原有 AgentRoot、配置与执行逻辑。AgentSession 继续由现有 Next.js/Pi 后端持有；不要复制一套桌面 Agent、子代理或审批执行器。权限相关修改先读 [permissions.md](docs/permissions.md)。
+- 子代理与后台模型使用原生设置编辑器；保留 CLI 配置中的未知字段和提示词正文。Hermes 是后台模型设置项，不是可分派代理；人工审批提醒放在常规设置。设置操作不得通过发送聊天消息或终端式 slash 菜单来实现。参见 [settings-ui.md](docs/agents/settings-ui.md) 和 [subagents.md](docs/agents/subagents.md)。
+- 过程信息默认折叠，沿用原思考/工具行样式；运行中显示最新一行，任务结束隐藏该预览。展开时限高滚动；关闭折叠设置时恢复原来的完整列表，不保留内部限高。参见 [sessions.md](docs/agents/sessions.md)。
+- 桌面输入框右键应保留选区；终端连接与输入、系统 shell 切换、隔离的完整历史窗口、仅图标/产品名/加载条的启动页均属于 fork 的兼容要求。修改相关文件前读 [client-platform.md](docs/agents/client-platform.md)，并选择对应原生回归。
+
+## 构建、排障与清理经验
+
+- 生产桌面资源只写 `.desktop/`，不污染开发 `.next/`；等构建、打包命令明确退出成功后，才开始依赖该产物的验收。打包和应用运行验收串行，避免把运行缓存打入安装包。
+- 保留 `public/fonts/noto-sans-mono/` 的原字体与 OFL 授权及既有中文回退。字体本地化解决的是构建下载失败，不能作为安装故障已经解决的证据。
+- NSIS 的“应用无法关闭”是复用文案，可能来自进程检查、旧卸载器失败或旧 7z 复制分支。先定位弹窗来源和返回码；不要仅凭文案全局杀进程、跳过旧卸载或删除安装登记来掩盖失败。
+- 进程/卸载测试使用独立标识和目录，不能关闭其他 Node/Electron/Pi 实例。把真实旧卸载器复制到临时目录并不等于完全隔离，它仍可能操作编译进去的产品登记和快捷方式；执行前必须明确这些副作用和数据归属。
+- 失败调查先保存安装包与旧卸载器指纹、关键日志和脱敏结论，再清理临时产物。测试报告区分“钩子通过”“隔离升级通过”“最终包内容核对通过”和“用户原安装实测通过”。
+- 日常只运行现有 `clean-local.ps1` 的预览和 `-Execute`，不为每次任务重写脚本；保留依赖、配置、安装包和校验文件，禁止用 `git clean -fdx` 代替。详细故障记录放到 `docs/agents/` 对应领域及验证文档，AGENTS 保留维护入口和约束。
+
+---
+
+## Pi Web development reference
 
 ## Fork branches and upstream maintenance
 
