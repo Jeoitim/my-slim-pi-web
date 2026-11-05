@@ -30,7 +30,7 @@
 
 ## 先安装 CLI
 
-前往 **[Jeoitim/my-slim-pi](https://github.com/Jeoitim/my-slim-pi)**，按所在系统完成安装，再按该仓库的说明配置模型、账号与所需工具。当前适配 **Pi 1.4.0**。
+前往 **[Jeoitim/my-slim-pi](https://github.com/Jeoitim/my-slim-pi)**，按所在系统完成安装，再按该仓库的说明配置模型、账号与所需工具。开发版本适配 **Pi 1.5.0**；已发布版本的要求见对应发布说明。
 
 默认使用的 Agent 目录为 `~/.pi/agent`。Web、桌面与 CLI 复用这一套资源和会话格式；自定义安装位置时，启动前用 `PI_CODING_AGENT_DIR` 指向实际 Agent 目录。
 
@@ -150,7 +150,7 @@ npm run desktop:pack
 
 Windows x64 生成 NSIS 安装包，Linux x64 生成 AppImage，均需在对应原生系统构建。桌面生产资源位于 `.desktop/`，与 Web 开发使用的 `.next/` 分开。
 
-本 fork 的开发分支为 `my-slim-pi-web`。版本采用 `<上游基准版本>-jeoitim.<修订号>`；当前基于 **pi-web 0.13.0**（`d128bae`），Pi SDK 依赖精确固定为 **1.4.0**。上游更新经独立集成 PR 审查后合入，本应用通过本仓库发布更新，不使用上游 npm 自动更新通道。
+本 fork 的开发分支为 `my-slim-pi-web`。版本采用 `<上游基准版本>-jeoitim.<修订号>`；当前开发版本基于 **pi-web 0.15.0**（`f130910`），Pi SDK 依赖精确固定为 **1.5.0**。上游更新经独立集成 PR 审查后合入，本应用通过本仓库发布更新，不使用上游 npm 自动更新通道。
 
 [桌面说明](docs/desktop.md) · [权限与配置](docs/permissions.md) · [兼容性记录](docs/compatibility.md) · [上游同步](docs/upstream.md) · [发布流程](docs/release.md)
 

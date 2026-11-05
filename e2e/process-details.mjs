@@ -178,6 +178,7 @@ try {
       const sidebar = page.getByRole("button", { name: "Show sidebar", exact: true });
       if (await sidebar.isVisible()) await sidebar.click();
       await page.getByRole("button", { name: "Settings", exact: true }).click();
+      if (viewport.width <= 640) await page.locator(".settings-phone-home").getByRole("button", { name: "General", exact: true }).click();
       const setting = page.getByRole("switch", { name: "Fold process details by default", exact: true });
       await setting.waitFor();
       if ((await setting.getAttribute("aria-checked")) !== String(enabled)) await setting.click();
@@ -217,6 +218,7 @@ try {
     const showSidebar = page.getByRole("button", { name: "显示侧边栏", exact: true });
     if (await showSidebar.isVisible()) await showSidebar.click();
     await page.getByRole("button", { name: "设置", exact: true }).click();
+    if (viewport.width <= 640) await page.locator(".settings-phone-home").getByRole("button", { name: "常规", exact: true }).click();
     const chineseSwitch = page.getByRole("switch", { name: "默认折叠处理详情", exact: true });
     await chineseSwitch.scrollIntoViewIfNeeded();
     assert.equal(await chineseSwitch.getAttribute("aria-checked"), "true");
