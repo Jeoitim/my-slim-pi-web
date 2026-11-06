@@ -7,7 +7,7 @@
 
 > **必须先安装并初始化 [My Slim Pi CLI](https://github.com/Jeoitim/my-slim-pi#安装)。Web UI 和桌面应用依赖该项目，不能脱离它独立使用。** 桌面安装包自带 Node.js 运行时，但不代替 CLI 的安装、扩展、模型配置或账号初始化。
 
-[下载桌面应用](https://github.com/Jeoitim/my-slim-pi-web/releases/latest) · [安装 My Slim Pi CLI](https://github.com/Jeoitim/my-slim-pi#安装) · [本版发布说明](docs/releases/0.13.0-jeoitim.1.md) · [桌面使用文档](docs/desktop.md)
+[下载桌面应用](https://github.com/Jeoitim/my-slim-pi-web/releases/latest) · [安装 My Slim Pi CLI](https://github.com/Jeoitim/my-slim-pi#安装) · [本版发布说明](docs/releases/0.15.0-jeoitim.1.md) · [桌面使用文档](docs/desktop.md)
 
 ![My Slim Pi Web 桌面应用：项目会话、文件浏览器与对话输入区](docs/images/my-slim-pi-web-desktop.png)
 
@@ -30,7 +30,7 @@
 
 ## 先安装 CLI
 
-前往 **[Jeoitim/my-slim-pi](https://github.com/Jeoitim/my-slim-pi)**，按所在系统完成安装，再按该仓库的说明配置模型、账号与所需工具。开发版本适配 **Pi 1.5.0**；已发布版本的要求见对应发布说明。
+前往 **[Jeoitim/my-slim-pi](https://github.com/Jeoitim/my-slim-pi)**，按所在系统完成安装，再按该仓库的说明配置模型、账号与所需工具。当前版本适配 **Pi 1.5.0**；其他版本的要求见对应发布说明。
 
 默认使用的 Agent 目录为 `~/.pi/agent`。Web、桌面与 CLI 复用这一套资源和会话格式；自定义安装位置时，启动前用 `PI_CODING_AGENT_DIR` 指向实际 Agent 目录。
 
@@ -48,13 +48,13 @@ Windows 与 Linux 应分别安装各自的原生依赖，使用各自的 Agent �
 2. 从 [GitHub Releases](https://github.com/Jeoitim/my-slim-pi-web/releases/latest) 下载对应系统的安装包和同名 `.sha256` 校验文件。
 3. 完全退出旧版应用后安装并启动，打开项目目录，选择模型开始对话。
 
-已发布版本为 **`0.13.0-jeoitim.1`**。
+当前版本为 **`0.15.0-jeoitim.1`**。
 
 | 下载 | 说明 |
 | --- | --- |
-| [Windows x64 安装包](https://github.com/Jeoitim/my-slim-pi-web/releases/download/v0.13.0-jeoitim.1/My.Slim.Pi.Web.Setup.0.13.0-jeoitim.1.exe) | 可选择安装位置；自带独立 Node.js 24、npm/npx。 |
-| [Windows SHA-256](https://github.com/Jeoitim/my-slim-pi-web/releases/download/v0.13.0-jeoitim.1/My.Slim.Pi.Web.Setup.0.13.0-jeoitim.1.exe.sha256) | 用于核对下载的安装包。 |
-| [Linux x64 AppImage](https://github.com/Jeoitim/my-slim-pi-web/releases/tag/v0.13.0-jeoitim.1) | 以本版附件为准；下载后赋予执行权限再运行。 |
+| [Windows x64 安装包](https://github.com/Jeoitim/my-slim-pi-web/releases/download/v0.15.0-jeoitim.1/My.Slim.Pi.Web.Setup.0.15.0-jeoitim.1.exe) | 可选择安装位置；自带独立 Node.js 24、npm/npx。 |
+| [Windows SHA-256](https://github.com/Jeoitim/my-slim-pi-web/releases/download/v0.15.0-jeoitim.1/My.Slim.Pi.Web.Setup.0.15.0-jeoitim.1.exe.sha256) | 用于核对下载的安装包。 |
+| [Linux x64 AppImage](https://github.com/Jeoitim/my-slim-pi-web/releases/tag/v0.15.0-jeoitim.1) | 以本版附件为准；下载后赋予执行权限再运行。 |
 
 桌面版与 Web 使用同一套界面和 Agent 后端。“设置 → 桌面应用”中可管理本地 Web 入口、登录密码和端口。Windows 的 Web 密码使用系统加密保存；修改或删除密码会重启后端，有运行任务时按界面提示处理。
 
