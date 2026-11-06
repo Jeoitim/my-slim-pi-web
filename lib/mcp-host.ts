@@ -242,8 +242,12 @@ export function watchConnection(transport: ObservedTransport, done: (outcome: "r
         pending.add(message.id);
         listsSent += 1;
       } else if (message.id === undefined && message.method === "notifications/initialized") {
-        initialized = true;
-        check();
+        // SDK connection setup and resource-tool registration continue only
+        // after this send resolves. Marking ready while it is still pending
+        // can let a prompt run before resource tools exist.
+        const sent = send(message);
+        void sent.then(() => { initialized = true; check(); }, () => {});
+        return sent;
       }
     }
     return send(message);

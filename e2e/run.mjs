@@ -9,11 +9,13 @@ import { dirname, join } from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright";
-import { checkFilePanel, filePanelFixture } from "./file-panel.mjs";
+import { checkFilePanel, checkLargeHtmlStorage, filePanelFixture, largeStorageFixture } from "./file-panel.mjs";
 import { checkExtensionDialogSizing, checkExtensionDialogs, extensionSource } from "./extension-dialog.mjs";
 import { checkChatAppearance } from "./chat-appearance.mjs";
 import { checkCodeBackground } from "./code-background.mjs";
+import { checkStreamingMetrics } from "./streaming-metrics.mjs";
 import { checkModelDiscovery } from "./model-discovery.mjs";
+import { checkModelOrder } from "./model-order.mjs";
 import { checkModelContext } from "./model-context.mjs";
 import { checkModelSelector } from "./model-selector.mjs";
 import { checkFilesPlacement, showSidebarSessions } from "./sidebar.mjs";
@@ -32,6 +34,8 @@ const sessionDir = join(agentDir, "sessions", "e2e");
 mkdirSync(project);
 const previewFile = join(project, "preview.html");
 writeFileSync(previewFile, filePanelFixture);
+const largeStorageFile = join(project, "large-storage.html");
+writeFileSync(largeStorageFile, largeStorageFixture);
 mkdirSync(sessionDir, { recursive: true });
 const timestamp = "2026-08-23T00:00:00.000Z";
 const LONG = "e2e-long-session";
@@ -197,6 +201,9 @@ try {
     await delay(250);
   }
 
+  // This fixture deliberately has no My Slim Pi installation.
+  assert.deepEqual(await api("/api/my-slim-pi/settings", 409), { error: "My Slim Pi installation not found" });
+
   const detail = await api(`/api/sessions/${LONG}?deferThinking=1&deferMedia=1`);
   assert.deepEqual(detail.context.entryIds, ids(4950, 5000));
   assert.equal(detail.context.messages.length, 50);
@@ -251,7 +258,14 @@ try {
     const errors = [];
     const olderResponses = [];
     page.on("pageerror", (error) => errors.push(error.message));
-    page.on("console", (event) => { if (event.type() === "error") errors.push(event.text()); });
+    page.on("console", (event) => {
+      if (event.type() !== "error") return;
+      // Chromium reports the expected unmanaged-installation 409 as a console
+      // error whenever settings opens. Keep all other errors visible.
+      if (event.location().url === `${base}/api/my-slim-pi/settings`
+        && event.text() === "Failed to load resource: the server responded with a status of 409 (Conflict)") return;
+      errors.push(`${event.text()} ${event.location().url}`);
+    });
     page.on("response", (response) => {
       if (response.url().startsWith(base) && response.status() >= 500) errors.push(`${response.status()} ${response.url()}`);
       const url = new URL(response.url());
@@ -483,6 +497,7 @@ try {
     await page.goto(`${base}/?session=${RICH}`, { waitUntil: "domcontentloaded" });
     await page.locator(".markdown-code-block pre").waitFor();
     await checkFilePanel(page, previewFile);
+    await checkLargeHtmlStorage(page, largeStorageFile);
     await checkExtensionDialogs(page, artifacts, viewport.width);
     await checkExtensionDialogSizing(page, viewport.width);
     if (viewport.width > 600) {
@@ -510,9 +525,11 @@ try {
       await checkModelDiscovery(page);
     }
     await checkModelContext(page);
+    await checkModelOrder(page);
     await page.goto(`${base}/?session=${CODE_BACKGROUND}`, { waitUntil: "domcontentloaded" });
     await page.locator(".markdown-code-block pre").waitFor();
     await checkCodeBackground(page);
+    await checkStreamingMetrics(page);
     await checkModelSelector(page, { base, project, artifacts });
     assert.deepEqual(errors, [], `Browser errors at width ${viewport.width}`);
     console.log(`PASS: ${viewport.width}px browser pagination, branch, markdown, code, tool call, and compaction navigation`);

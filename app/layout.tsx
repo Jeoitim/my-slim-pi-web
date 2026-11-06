@@ -61,6 +61,7 @@ export default function RootLayout({
       <head>
         <link rel="preload" href="/fonts/noto-sans-mono/latin.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
         <link rel="preload" href="/fonts/noto-sans-mono/cyrillic.woff2" as="font" type="font/woff2" crossOrigin="anonymous" />
+        <link rel="manifest" href="/manifest.webmanifest" crossOrigin="use-credentials" />
         <meta name="google" content="notranslate" />
         <script
           dangerouslySetInnerHTML={{
