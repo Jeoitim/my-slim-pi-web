@@ -27,6 +27,7 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npx tsc --noEmit
+      - run: npx playwright install --with-deps --only-shell chromium
       - run: npm test
       - run: npm run test:desktop
 
