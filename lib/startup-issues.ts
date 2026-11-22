@@ -30,7 +30,10 @@ export interface StartupIssueSources {
 export const STARTUP_ISSUE_LIMIT = 8;
 
 function withPath(message: string, path: string | undefined): string {
-  return path && !message.includes(path) ? `${path}: ${message}` : message;
+  if (!path || message.includes(path)) return message;
+  // On Windows the SDK reports native paths while its loader uses forward slashes.
+  if (path.includes("\\") && message.includes(path.replaceAll("\\", "/"))) return message;
+  return `${path}: ${message}`;
 }
 
 /** Every issue, for the server log; `limitStartupNotices()` picks what the page is told. */
