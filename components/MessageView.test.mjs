@@ -37,6 +37,12 @@ function renderMessage(message, props = {}) {
   );
 }
 
+test("a collapsed grep card shows what was searched for", () => {
+  const html = renderMessage({ role: "assistant", content: [{ type: "toolCall", toolCallId: "grep-preview", toolName: "grep", input: { path: "src", pattern: "TODO" } }] });
+  assert.match(html, />TODO<\/span>/);
+  assert.doesNotMatch(html, />src<\/span>/);
+});
+
 test("updates a reused message when its written files change", () => {
   const props = { message: { role: "assistant", content: [] } };
   assert.equal(MessageView.compare(props, props), true);
@@ -51,6 +57,17 @@ test("on a narrow phone a message's actions drop their labels and keep their tit
   }
   const css = readFileSync(new URL("../app/globals.css", import.meta.url), "utf8");
   assert.match(css, /@media \(max-width: 380px\) \{\s*\.message-action-label \{\s*display: none;\s*\}\s*\}/);
+});
+
+test("a prompt sent during the run offers New session from the entry the wrapper named, not Edit (#1746)", () => {
+  const props = { forkEntryId: "live-entry", onFork: () => {}, onEditContent: () => {} };
+  const html = renderMessage({ role: "user", content: "Hi", timestamp: 1 }, props);
+  assert.ok(html.includes('title="New session — creates an independent copy from here"'));
+  assert.ok(!html.includes('title="Edit from here — branches within this session"'));
+  const without = renderMessage({ role: "user", content: "Hi", timestamp: 1 }, { onFork: () => {} });
+  assert.ok(!without.includes('title="New session — creates an independent copy from here"'));
+  const message = { role: "user", content: "Hi", timestamp: 1 };
+  assert.equal(MessageView.compare({ message, onFork: props.onFork }, { message, ...props, onEditContent: undefined }), false);
 });
 
 test("streaming headers preserve counts and speed without showing empty metrics", () => {
@@ -112,6 +129,32 @@ test("previews the first thinking line and reveals the full text with the saved 
   }
 });
 
+test("a reply's terminal escape sequences are not shown as text (#1753)", () => {
+  const previousWindow = globalThis.window;
+  try {
+    for (const expanded of [false, true]) {
+      globalThis.window = { localStorage: { getItem: () => String(expanded) } };
+      const html = renderToStaticMarkup(React.createElement(
+        I18nProvider,
+        null,
+        React.createElement(ThinkingBlock, {
+          block: { type: "thinking", thinking: "\x1b[38;5;5mThinking:\x1b[39m \x1b[39m\x1b[2mInteresting: a plan\nSecond\x1b[22m line" },
+          blockIndex: 0,
+        }),
+      ));
+      assert.doesNotMatch(html, /\x1b|\[\d+(?:;\d+)*m/);
+      assert.match(html, /Thinking: Interesting: a plan/);
+      assert.equal(html.includes("Second line"), expanded);
+    }
+  } finally {
+    if (previousWindow === undefined) delete globalThis.window;
+    else globalThis.window = previousWindow;
+  }
+  const answer = renderMessage({ role: "assistant", content: [{ type: "text", text: "\x1b[1mDone\x1b[0m: **ok**" }] });
+  assert.doesNotMatch(answer, /\x1b|\[\d+m/);
+  assert.match(answer, /Done: <strong>ok<\/strong>/);
+});
+
 test("renders long expanded thinking in pieces and short thinking as one text node (#1196)", () => {
   const previousWindow = globalThis.window;
   globalThis.window = { localStorage: { getItem: () => "true" } };
@@ -152,6 +195,22 @@ test("shows deferred thinking previews without loading the full content", () => 
   });
   assert.match(html, />Historical first line<\/span>/);
   assert.match(html, /aria-expanded="false"/);
+});
+
+test("keys a streaming reply by its request identity across reconnects", () => {
+  const source = ts.createSourceFile("ProcessDetailsGroup.tsx", readFileSync(new URL("./ProcessDetailsGroup.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const keys = [];
+  (function visit(node) {
+    if ((ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) && node.tagName.getText(source) === "MessageView") {
+      const attributes = node.attributes.properties.filter(ts.isJsxAttribute);
+      if (attributes.some((attribute) => attribute.name.getText(source) === "isStreaming" && !attribute.initializer)) {
+        const key = attributes.find((attribute) => attribute.name.getText(source) === "key");
+        if (key) keys.push(key.initializer?.expression?.getText(source));
+      }
+    }
+    ts.forEachChild(node, visit);
+  })(source);
+  assert.deepEqual(keys, ["streamRateKey(streaming)"]);
 });
 
 test("keys an assistant message's blocks by their place, not the entry id (#1184)", () => {
@@ -323,6 +382,66 @@ test("an edit call shows no table: its arguments are a list of patches", () => {
   } finally {
     clearExpandedToolCalls();
   }
+});
+
+test("a pending edit previews its edits as a diff until the result's diff replaces it (#1625)", (t) => {
+  const block = {
+    type: "toolCall",
+    toolCallId: "call-edit-pending",
+    toolName: "edit",
+    input: { path: "src/a.ts", edits: [{ oldText: "const keep = 0;\nconst a = 1;", newText: "const keep = 0;\nconst a = 2;" }] },
+  };
+  setToolCallExpanded(block.toolCallId, true);
+  t.after(() => setToolCallExpanded(block.toolCallId, false));
+  const message = { role: "assistant", provider: "anthropic", model: "claude-test", content: [block] };
+
+  const pending = textOf(renderMessage(message, { toolResults: new Map() }));
+  assert.ok(pending.includes("const a = 1;"));
+  assert.ok(pending.includes("const a = 2;"));
+  assert.ok(pending.includes("const keep = 0;"));
+  assert.ok(!pending.includes('"edits"'), "the diff, not the input JSON");
+
+  const result = {
+    role: "toolResult",
+    toolCallId: block.toolCallId,
+    toolName: "edit",
+    content: [{ type: "text", text: "Successfully replaced 1 block(s) in src/a.ts." }],
+    details: { diff: "", patch: "--- src/a.ts\n+++ src/a.ts\n@@ -7,1 +7,1 @@\n-const a = 1;\n+const a = 3;\n" },
+    isError: false,
+  };
+  const done = textOf(renderMessage(message, { toolResults: new Map([[block.toolCallId, result]]) }));
+  assert.ok(done.includes("const a = 3;"));
+  assert.ok(!done.includes("const a = 2;"), "the preview is gone once the result arrives");
+
+  const failed = { ...result, content: [{ type: "text", text: "Could not find the exact text" }], details: undefined, isError: true };
+  const error = textOf(renderMessage(message, { toolResults: new Map([[block.toolCallId, failed]]) }));
+  assert.ok(error.includes("Could not find the exact text"));
+  assert.ok(!error.includes("const a = 2;"));
+});
+
+test("an edit in an aborted or failed message gets no preview: pi never runs it", (t) => {
+  for (const stopReason of ["aborted", "error"]) {
+    const block = {
+      type: "toolCall",
+      toolCallId: `call-edit-${stopReason}`,
+      toolName: "edit",
+      input: { path: "src/a.ts", edits: [{ oldText: "const a = 1;", newText: "const a = 2;" }] },
+    };
+    setToolCallExpanded(block.toolCallId, true);
+    t.after(() => setToolCallExpanded(block.toolCallId, false));
+    const message = { role: "assistant", provider: "anthropic", model: "claude-test", content: [block], stopReason, errorMessage: "boom" };
+    const html = textOf(renderMessage(message, { toolResults: new Map() }));
+    assert.ok(!html.includes("const a = 2;"), stopReason);
+    assert.ok(!html.includes("const a = 1;"), stopReason);
+  }
+});
+
+test("a pending edit with no edits to preview shows its input instead of nothing", (t) => {
+  const block = { type: "toolCall", toolCallId: "call-edit-other", toolName: "str_replace_editor", input: { path: "f", old_str: "a", new_str: "b" } };
+  setToolCallExpanded(block.toolCallId, true);
+  t.after(() => setToolCallExpanded(block.toolCallId, false));
+  const html = renderMessage({ role: "assistant", provider: "anthropic", model: "claude-test", content: [block] }, { toolResults: new Map() });
+  assert.ok(textOf(html).includes("old_str"));
 });
 
 test("a read, a subagent and a flat MCP call show one row per argument", (t) => {
@@ -533,6 +652,51 @@ test("renders partial assistant content before the provider error", () => {
 
   assert.match(html, /Partial response/);
   assert.match(html, /Error: Connection closed/);
+});
+
+test("a stopped reply says Stopped, never the abort error its provider's client threw", () => {
+  for (const errorMessage of ["Request aborted", "This operation was aborted", "OpenAI Responses stream ended before a terminal response event"]) {
+    const html = renderMessage({
+      role: "assistant",
+      provider: "openai",
+      model: "gpt-test",
+      content: [{ type: "text", text: "Partial response" }],
+      stopReason: "aborted",
+      errorMessage,
+    });
+    assert.match(html, /Partial response/);
+    assert.match(html, />Stopped</);
+    assert.ok(!html.includes(errorMessage), errorMessage);
+  }
+
+  // Stopped while it streamed a tool call's arguments: the call never ran, so
+  // its card has no result, and the line under it says why.
+  const html = renderMessage({
+    role: "assistant",
+    provider: "anthropic",
+    model: "claude-test",
+    content: [
+      { type: "text", text: "Writing the file." },
+      { type: "toolCall", toolCallId: "call-stopped-write", toolName: "write", input: { path: "a.txt" } },
+    ],
+    stopReason: "aborted",
+    errorMessage: "This operation was aborted",
+  }, { toolResults: new Map() });
+  assert.ok(html.indexOf(">Stopped<") > html.indexOf("a.txt"));
+});
+
+test("a stopped reply's mark leads its usage line instead of a line of its own", () => {
+  const html = renderMessage({
+    role: "assistant",
+    provider: "anthropic",
+    model: "claude-test",
+    content: [{ type: "text", text: "Partial response" }],
+    stopReason: "aborted",
+    errorMessage: "This operation was aborted",
+    usage: { input: 1200, output: 34, cacheRead: 0, cacheWrite: 0, cost: { total: 0 } },
+  }, { turnDurationMs: 12_000 });
+  assert.match(html, /<span>Stopped<\/span> <span>·<\/span> <span><span[^>]*>↑<\/span>/);
+  assert.equal(html.split(">Stopped<").length, 2);
 });
 
 test("marks persisted assistant messages with their source entry", () => {
@@ -959,7 +1123,8 @@ test("collapses the compaction summary to its title and token count, as pi's TUI
     null,
     React.createElement(CompactionSummaryDetails, { summary }),
   ));
-  assert.match(details, /following summary/);
+  // The header already says it was compacted; the summary follows with no sentence restating that.
+  assert.doesNotMatch(details, /following summary/);
   assert.match(details, /Ship the parser fix/);
   assert.match(details, /File context: 1 read, 1 modified/);
   assert.match(details, /lib\/read\.ts/);
@@ -1084,10 +1249,10 @@ test("one column names a file section by the file's own path, not by Before and 
 test("the layout is the viewport's choice, taken once for both the patch input and the patch result", () => {
   const source = readFileSync(new URL("./MessageView.tsx", import.meta.url), "utf8");
 
-  // Both the applied-patch card and a result's patch render through SplitFilesView,
-  // so a phone never gets one of each.
+  // The applied-patch card, a result's patch and a pending edit's preview all
+  // render through SplitFilesView, so a phone never gets one of each.
   assert.match(source, /const layout: PatchDiffLayout = useIsMobile\(\) \? "stacked" : "split";/);
-  assert.equal(countIn(source, "<SplitFilesView"), 2);
+  assert.equal(countIn(source, "<SplitFilesView"), 3);
 });
 
 test("one column numbers a removed line by the old file and every other line by the new one", () => {

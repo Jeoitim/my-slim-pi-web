@@ -3,7 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { useI18n } from "@/hooks/useI18n";
 import { countRunningSubagents, sideChatTitle } from "@/lib/session-family";
-import type { SessionUsageSummary } from "@/lib/session-stats";
+import { MAX_SESSION_STATS_IDS, type SessionUsageSummary } from "@/lib/session-stats";
 import { formatActiveDuration, formatCompactCount, formatCostShort } from "@/lib/session-stats-format";
 import type { SessionInfo, SubagentSessionStatus } from "@/lib/types";
 import { DeleteConfirm } from "./SessionTree";
@@ -28,6 +28,34 @@ interface Props {
 const STATS_POLL_MS = 3000;
 
 /**
+ * Every id's usage, read in batches the stats route accepts (#1728): a family
+ * past MAX_SESSION_STATS_IDS sent in one request got a 400 and every row lost
+ * its numbers. Batches go one after another; null when any of them fails, so
+ * rows keep their last numbers rather than half the family dropping out.
+ */
+export async function fetchAgentUsage(
+  ids: readonly string[],
+  signal?: AbortSignal,
+  fetchImpl: typeof fetch = fetch,
+): Promise<Record<string, SessionUsageSummary> | null> {
+  const stats: Record<string, SessionUsageSummary> = {};
+  for (let start = 0; start < ids.length; start += MAX_SESSION_STATS_IDS) {
+    const res = await fetchImpl("/api/sessions/stats", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ ids: ids.slice(start, start + MAX_SESSION_STATS_IDS) }),
+      signal,
+      cache: "no-store",
+    });
+    if (!res.ok) return null;
+    const data = await res.json() as { stats?: Record<string, SessionUsageSummary> };
+    if (!data.stats) return null;
+    Object.assign(stats, data.stats);
+  }
+  return stats;
+}
+
+/**
  * Usage of every agent in the family, as the toolbar's stats popover counts
  * it. Read on open and whenever a run starts or ends; polled while one runs,
  * on a visible page, one request at a time.
@@ -44,16 +72,8 @@ function useAgentUsage(ids: readonly string[], runningKey: string): Record<strin
       if (inFlight) return;
       inFlight = true;
       try {
-        const res = await fetch("/api/sessions/stats", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ ids: requested }),
-          signal: controller.signal,
-          cache: "no-store",
-        });
-        if (!res.ok) return;
-        const data = await res.json() as { stats?: Record<string, SessionUsageSummary> };
-        if (!controller.signal.aborted && data.stats) setUsage(data.stats);
+        const stats = await fetchAgentUsage(requested, controller.signal);
+        if (!controller.signal.aborted && stats) setUsage(stats);
       } catch {
         /* best-effort: rows keep their last numbers */
       } finally {
@@ -115,8 +135,32 @@ function hasUsage(usage: SessionUsageSummary | undefined): usage is SessionUsage
   return Boolean(usage && (usage.tokens.total > 0 || usage.totalActiveMs > 0));
 }
 
-function sessionTitle(session: SessionInfo): string {
+export function sessionTitle(session: SessionInfo): string {
   return session.name || session.firstMessage || session.id.slice(0, 12);
+}
+
+/**
+ * A subagent row's first line: the session's name, which a spawn sets to the task's description
+ * and a resume with a new description renames (#1735), else that first description.
+ */
+export function subagentTitle(session: SessionInfo): string {
+  const relation = session.relation?.kind === "subagent" ? session.relation : null;
+  return session.name || relation?.description || sessionTitle(session);
+}
+
+/** A row's icon: a person for the main agent, a bubble for a side chat, a robot for a subagent. */
+export function AgentKindIcon({ kind, size }: { kind: "main" | "side" | "subagent"; size: number }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      {kind === "main" ? (
+        <><circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" /></>
+      ) : kind === "side" ? (
+        <path d="M21 12a8 8 0 0 1-8 8H5.5a2 2 0 0 1-1.4-3.4A8 8 0 1 1 21 12z" />
+      ) : (
+        <><rect x="5" y="7" width="14" height="11" rx="2" /><path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" /></>
+      )}
+    </svg>
+  );
 }
 
 function formatRelativeTime(value: string, locale: string): string {
@@ -207,7 +251,7 @@ function AgentRow({
   const relation = session.relation?.kind === "subagent" ? session.relation : null;
   const side = session.relation?.kind === "side";
   const status: SubagentSessionStatus = running ? "running" : relation?.status ?? "completed";
-  const primary = main ? t("agentSwitcher.main") : side ? sideTitle ?? t("agentSwitcher.sideChat") : relation?.description || sessionTitle(session);
+  const primary = main ? t("agentSwitcher.main") : side ? sideTitle ?? t("agentSwitcher.sideChat") : subagentTitle(session);
   const profile = side ? t("agentSwitcher.sideChat") : relation?.profile ?? t("agentSwitcher.subagent");
   const modelId = usage?.model?.modelId;
   const thinkingLevel = usage?.thinkingLevel && usage.thinkingLevel !== "off" ? usage.thinkingLevel : undefined;
@@ -289,19 +333,7 @@ function AgentRow({
         }}
       >
         <span style={{ width: 28, height: 28, display: "grid", placeItems: "center", color: main ? "var(--text-muted)" : "var(--accent)" }}>
-          {main ? (
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <circle cx="12" cy="8" r="4" /><path d="M4 21a8 8 0 0 1 16 0" />
-            </svg>
-          ) : side ? (
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <path d="M21 12a8 8 0 0 1-8 8H5.5a2 2 0 0 1-1.4-3.4A8 8 0 1 1 21 12z" />
-            </svg>
-          ) : (
-            <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-              <rect x="5" y="7" width="14" height="11" rx="2" /><path d="M9 11h.01M15 11h.01M9 15h6M12 7V4M10 4h4" />
-            </svg>
-          )}
+          <AgentKindIcon kind={main ? "main" : side ? "side" : "subagent"} size={17} />
         </span>
         <span style={{ minWidth: 0 }}>
           <span style={{ display: "block", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", fontSize: 12, fontWeight: selected ? 600 : 500 }} title={primary}>
@@ -474,10 +506,11 @@ export function AgentSessionPanel({ rootSession, subagents, selectedSessionId, r
       aria-label={t("agentSwitcher.title")}
       style={{
         background: "var(--bg-panel)",
-        borderLeft: "1px solid var(--border)",
+        // No left border: the panel starts at the chat column's left edge, where the sidebar's
+        // own right border already runs, as the full-width top panels have only a bottom line.
         borderRight: "1px solid var(--border)",
         borderBottom: "1px solid var(--border)",
-        borderRadius: "0 0 6px 6px",
+        borderRadius: "0 0 6px 0",
         boxShadow: "0 10px 28px rgba(0,0,0,0.10)",
         overflow: "hidden",
       }}
@@ -554,7 +587,7 @@ export function AgentSessionPanel({ rootSession, subagents, selectedSessionId, r
                   onToggleSubagentTab(session.id, t("sideChat.title"), true);
                   return;
                 }
-                onToggleSubagentTab(session.id, relation?.description || relation?.profile || sessionTitle(session));
+                onToggleSubagentTab(session.id, session.name || relation?.description || relation?.profile || sessionTitle(session));
               }}
               onDelete={session.relation?.kind === "side" ? () => setConfirmDeleteSideChatId(session.id) : undefined}
               confirming={confirmDeleteSideChatId === session.id}

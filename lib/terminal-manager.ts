@@ -242,7 +242,7 @@ export function killTerminal(id: string, force = false): boolean {
     };
     stop(force);
     // A shell may trap SIGHUP; explicit close and lease expiry must still finish.
-    if (!force) {
+    if (!force && process.platform !== "win32") {
       record.cleanupTimer = setTimeout(() => {
         if (!record.exited) stop(true);
       }, 2000);

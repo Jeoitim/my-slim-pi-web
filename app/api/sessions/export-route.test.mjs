@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import test from "node:test";
@@ -11,7 +11,7 @@ const { SessionManager } = await jiti.import("@earendil-works/pi-coding-agent");
 const { cacheSessionPath, invalidateSessionPathCache } = await jiti.import("../../../lib/session-reader.ts");
 const { GET } = await jiti.import("./[id]/export/route.ts");
 
-test("exports a real session with Pi 1.5's HTML helper", async (t) => {
+test("exports a real session with Pi 1.6's HTML helper", async (t) => {
   const area = await mkdtemp(join(tmpdir(), "pi-web-export-test-"));
   const manager = SessionManager.create(area, join(area, "sessions"));
   manager.appendMessage({ role: "user", content: "Export this message", timestamp: Date.now() });
@@ -29,4 +29,12 @@ test("exports a real session with Pi 1.5's HTML helper", async (t) => {
   await page.setContent(await response.text());
   await page.getByText("Export this message", { exact: true }).waitFor();
   await page.getByText("Export response", { exact: true }).waitFor();
+});
+
+const source = await readFile(new URL("./[id]/export/route.ts", import.meta.url), "utf8");
+
+test("session export uses a private per-request temp directory", () => {
+  assert.match(source, /mkdtempSync\(join\(tmpdir\(\), "pi-web-export-"\)\)/);
+  assert.doesNotMatch(source, /join\(tmpdir\(\), "pi-web-export"\)/);
+  assert.match(source, /rmSync\(tempDir, \{ recursive: true, force: true \}\)/);
 });

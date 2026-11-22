@@ -47,6 +47,7 @@ import {
 } from "./SettingsUi";
 import { itemsToSwitch, projectTrustReloadKey } from "./settings-ui-helpers";
 import { MarkdownBody } from "./MarkdownBody";
+import { readJsonOrThrow } from "@/lib/fetch-json";
 
 type SkillScope = "global" | "project" | "path";
 type Translate = ReturnType<typeof useI18n>["t"];
@@ -104,8 +105,16 @@ function shortVersion(version: string | undefined, unknown: string): string {
   return version ? version.slice(0, 8) : unknown;
 }
 
-export function skillInstructionsBody(content: string): string {
-  return parseFrontmatter(content).rest.trim();
+/**
+ * The Markdown under a skill's frontmatter. Given the skill's name, a first
+ * heading that only repeats it is dropped: the pane already shows the name.
+ */
+export function skillInstructionsBody(content: string, name?: string): string {
+  const body = parseFrontmatter(content).rest.trim();
+  if (!name) return body;
+  const firstLine = body.match(/^#{1,6}[ \t]+(.*?)[ \t]*#*[ \t]*(?:\r?\n|$)/);
+  if (!firstLine || firstLine[1].trim().toLowerCase() !== name.trim().toLowerCase()) return body;
+  return body.slice(firstLine[0].length).trim();
 }
 
 /**
@@ -192,11 +201,9 @@ function SkillDetail({
         const params = new URLSearchParams({ cwd, filePath: skill.filePath });
         if (documentPath !== rootDocument) params.set("document", documentPath);
         const response = await fetch(`/api/skills/content?${params}`, { signal: controller.signal });
-        const data = (await response.json()) as Partial<SkillContentResponse> & { error?: string };
-        if (!response.ok || data.error || typeof data.content !== "string") {
-          throw new Error(data.error ?? `HTTP ${response.status}`);
-        }
-        setInstructions(skillInstructionsBody(data.content));
+        const data = await readJsonOrThrow<Partial<SkillContentResponse>>(response);
+        if (typeof data.content !== "string") throw new Error(`HTTP ${response.status}`);
+        setInstructions(skillInstructionsBody(data.content, documentPath === rootDocument ? skill.name : undefined));
       } catch (error) {
         if (controller.signal.aborted) return;
         setInstructionsError(error instanceof Error ? error.message : String(error));
@@ -205,7 +212,7 @@ function SkillDetail({
 
     void load();
     return () => controller.abort();
-  }, [cwd, skill.filePath, documentPath, rootDocument]);
+  }, [cwd, skill.filePath, skill.name, documentPath, rootDocument]);
 
   return (
     <ConfigDetailStack>
@@ -478,7 +485,8 @@ function AddSkillPanel({
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === "Enter") search(query);
+              if (e.nativeEvent.isComposing || e.keyCode === 229) return;
+              if (e.key === "Enter" && !searching) void search(query);
             }}
              placeholder={t("i18n.skillSearchPlaceholder")}
             style={{
@@ -658,8 +666,7 @@ export function SkillsConfig({
     setError(null);
     try {
       const res = await fetch(`/api/skills?cwd=${encodeURIComponent(cwd)}`);
-      const d = (await res.json()) as Partial<SkillsResponse> & { error?: string };
-      if (!res.ok || d.error) throw new Error(d.error ?? `HTTP ${res.status}`);
+      const d = await readJsonOrThrow<Partial<SkillsResponse>>(res);
       const list = d.skills ?? [];
       setSkills(list);
       setProjectResourcesLoaded(d.projectResourcesLoaded ?? true);
@@ -721,11 +728,7 @@ export function SkillsConfig({
           scope: skill?.install?.scope,
         }),
       });
-      const data = (await res.json()) as {
-        updates?: SkillUpdateResult[];
-        error?: string;
-      };
-      if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
+      const data = await readJsonOrThrow<{ updates?: SkillUpdateResult[] }>(res);
       setUpdateStatuses((current) => {
         const next = { ...current };
         for (const update of data.updates ?? []) {
@@ -842,8 +845,8 @@ export function SkillsConfig({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ filePaths, disableModelInvocation }),
       });
-      const d = (await res.json()) as { results?: SkillToggleResult[]; error?: string };
-      if (!res.ok || d.error || !d.results) throw new Error(d.error ?? `HTTP ${res.status}`);
+      const d = await readJsonOrThrow<{ results?: SkillToggleResult[] }>(res);
+      if (!d.results) throw new Error(`HTTP ${res.status}`);
       const results = d.results;
       setSkills((prev) => applySkillToggleResults(prev, results, disableModelInvocation));
       const failures = results.filter((result) => result.error);
