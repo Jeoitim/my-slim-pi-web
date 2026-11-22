@@ -48,6 +48,7 @@ import {
   ConfigTrustNotice,
 } from "./SettingsUi";
 import { itemsToSwitch, projectTrustReloadKey } from "./settings-ui-helpers";
+import { readJsonOrThrow } from "@/lib/fetch-json";
 
 type PluginScope = PluginPackageInfo["scope"];
 type PluginAction = "install" | "remove" | "update" | "disable" | "enable";
@@ -113,7 +114,6 @@ function diagnosticText(diagnostic: PluginsResponse["diagnostics"][number]): str
 }
 
 function resourceSummary(pkg: PluginPackageInfo, t: Translate): string {
-  if (pkg.disabled) return t("i18n.disabled");
   const parts = [
     pkg.counts.extensions ? t("i18n.resourceCount", { count: pkg.counts.extensions, label: t("i18n.extensionShort") }) : "",
     pkg.counts.skills ? t("i18n.resourceCount", { count: pkg.counts.skills, label: t("i18n.skillShort") }) : "",
@@ -174,7 +174,7 @@ function ResourceList({ pkg }: { pkg: PluginPackageInfo }) {
   if (groups.length === 0) {
     return (
       <div style={{ fontSize: 12, color: "var(--text-dim)" }}>
-        {pkg.disabled ? t("i18n.packageDisabled") : t("i18n.noResolvedResources")}
+        {t("i18n.noResolvedResources")}
       </div>
     );
   }
@@ -365,19 +365,8 @@ function PackageDetail({
         <ConfigDetailHeader className="is-top-aligned">
           <ConfigDetailHeaderInfo>
             <ConfigScopeTag scope={pkg.scope}>{scopeLabel(pkg.scope, t)}</ConfigScopeTag>
-            {pkg.disabled ? (
-              <span
-                style={{
-                  fontSize: 10,
-                  padding: "1px 5px",
-                  borderRadius: 3,
-                  background: "rgba(120,120,120,0.12)",
-                  color: "var(--text-dim)",
-                }}
-              >
-                {t("i18n.disabled")}
-              </span>
-            ) : pkg.filtered && (
+            {/* Disabled is said by the switch and the Status row; a filter is said only here. */}
+            {!pkg.disabled && pkg.filtered && (
               <span
                 style={{
                   fontSize: 10,
@@ -502,12 +491,18 @@ function PackageDetail({
             <span style={{ fontSize: 12, color: "#ef4444" }}>{updateError}</span>
           )}
         </ConfigDetailGridRow>
-        <ConfigDetailGridRow label={t("i18n.package")} mono>
-          {pkg.packageName ?? t("i18n.unknown")}
-        </ConfigDetailGridRow>
-        <ConfigDetailGridRow label={t("i18n.resources")}>
-          {resourceSummary(pkg, t)}
-        </ConfigDetailGridRow>
+        {/* The title is the source; npm:<name> already names the package. */}
+        {!(pkg.packageName && pkg.source.endsWith(pkg.packageName)) && (
+          <ConfigDetailGridRow label={t("i18n.package")} mono>
+            {pkg.packageName ?? t("i18n.unknown")}
+          </ConfigDetailGridRow>
+        )}
+        {/* A disabled package loads nothing: the Status row says so, and no resource list follows. */}
+        {!pkg.disabled && (
+          <ConfigDetailGridRow label={t("i18n.resources")}>
+            {resourceSummary(pkg, t)}
+          </ConfigDetailGridRow>
+        )}
         <ConfigDetailGridRow label={t("i18n.installedPath")} tone={pkg.installedPath ? "muted" : "error"} mono>
           {pkg.installedPath ? shortenPath(pkg.installedPath) : t("i18n.notFound")}
         </ConfigDetailGridRow>
@@ -516,10 +511,12 @@ function PackageDetail({
         </ConfigDetailGridRow>
       </ConfigDetailGrid>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
-        <ConfigSectionTitle>{t("i18n.resolvedResources")}</ConfigSectionTitle>
-        <ResourceList pkg={pkg} />
-      </div>
+      {!pkg.disabled && (
+        <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
+          <ConfigSectionTitle>{t("i18n.resolvedResources")}</ConfigSectionTitle>
+          <ResourceList pkg={pkg} />
+        </div>
+      )}
 
       {actionMessage && (
         <div style={{ fontSize: 12, color: "#16a34a" }}>
@@ -616,8 +613,7 @@ export function PluginsConfig({
     setGroupStatus(null);
     try {
       const res = await fetch(`/api/plugins?cwd=${encodeURIComponent(cwd)}`);
-      const next = (await res.json()) as PluginsResponse & { error?: string };
-      if (!res.ok || next.error) throw new Error(next.error ?? `HTTP ${res.status}`);
+      const next = await readJsonOrThrow<PluginsResponse>(res);
       setData(next);
       setAddMode((current) => (next.packages.length === 0 && next.standaloneExtensions.length === 0) || current);
       setSelected((current) => {
@@ -679,11 +675,7 @@ export function PluginsConfig({
           scope: pkg?.scope,
         }),
       });
-      const data = (await res.json()) as {
-        updates?: PluginUpdateResult[];
-        error?: string;
-      };
-      if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
+      const data = await readJsonOrThrow<{ updates?: PluginUpdateResult[] }>(res);
       setUpdateStatuses((current) => {
         const next = { ...current };
         for (const update of data.updates ?? []) {
@@ -714,8 +706,7 @@ export function PluginsConfig({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "update", cwd }),
       });
-      const next = (await res.json()) as PluginsResponse & { error?: string };
-      if (!res.ok || next.error) throw new Error(next.error ?? `HTTP ${res.status}`);
+      const next = await readJsonOrThrow<PluginsResponse>(res);
       setData(next);
       setUpdateStatuses({});
       setActionMessage(t("i18n.packagesUpdated"));
@@ -741,8 +732,7 @@ export function PluginsConfig({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action, source: pkg.source, scope: pkg.scope, cwd }),
       });
-      const next = (await res.json()) as PluginsResponse & { error?: string };
-      if (!res.ok || next.error) throw new Error(next.error ?? `HTTP ${res.status}`);
+      const next = await readJsonOrThrow<PluginsResponse>(res);
       setData(next);
       if (action === "remove") {
         setSelected(next.packages[0]
@@ -808,8 +798,8 @@ export function PluginsConfig({
           packages: targets.map(({ source }) => ({ source, scope })),
         }),
       });
-      const next = (await res.json()) as Partial<PluginsBulkResponse> & { error?: string };
-      if (!res.ok || next.error || !next.results) throw new Error(next.error ?? `HTTP ${res.status}`);
+      const next = await readJsonOrThrow<Partial<PluginsBulkResponse>>(res);
+      if (!next.results) throw new Error(`HTTP ${res.status}`);
       const { results, ...plugins } = next as PluginsBulkResponse;
       setData(plugins);
       const failures = results.filter((result) => result.error);
@@ -849,8 +839,7 @@ export function PluginsConfig({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ action: "install", source, scope: installScope, cwd }),
       });
-      const next = (await res.json()) as PluginsResponse & { error?: string };
-      if (!res.ok || next.error) throw new Error(next.error ?? `HTTP ${res.status}`);
+      const next = await readJsonOrThrow<PluginsResponse>(res);
       setData(next);
       const installed = findInstalledPackage(next.packages, source, installScope);
       setSelected(installed ? packageKey(installed) : key);

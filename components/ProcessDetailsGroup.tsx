@@ -6,18 +6,20 @@ import { useI18n } from "@/hooks/useI18n";
 import { countToolCallBlocks, splitFinalAssistantBlocks } from "@/lib/message-display";
 import { getProcessActivities, PROCESS_ACTIVITY_LIMIT, type ProcessActivity } from "@/lib/process-activity";
 import { createStreamingStore, type StreamingStore } from "@/lib/streaming-message";
+import { streamRateKey } from "@/lib/stream-token-rate";
 import type { CacheMissSummary } from "@/lib/transcript-notices";
 import { formatTurnDuration } from "@/lib/turn-duration";
 import { MessageView, ProcessActivityView } from "./MessageView";
 import { cacheMissSummaryText, TRANSCRIPT_NOTICE_WARNING_COLOR } from "./TranscriptNotices";
 
 const idleStore = createStreamingStore();
-type MessageProps = Pick<ComponentProps<typeof MessageView>, "toolResults" | "modelNames" | "cwd" | "onOpenFile" | "onOpenSubagent">;
+type MessageProps = Pick<ComponentProps<typeof MessageView>, "toolResults" | "toolClocks" | "modelNames" | "cwd" | "onOpenFile" | "onOpenSubagent">;
 
-export function ProcessDetailsGroup({ messageCount, toolCallCount, durationMs, cacheMisses, reveal = false, activities = [], live = false, folded = true, store, onCommit, messageProps, children }: {
+export function ProcessDetailsGroup({ messageCount, toolCallCount, durationMs, cost, cacheMisses, reveal = false, activities = [], live = false, folded = true, store, onCommit, messageProps, children }: {
   messageCount: number;
   toolCallCount: number;
   durationMs?: number;
+  cost?: number;
   cacheMisses?: CacheMissSummary;
   reveal?: boolean;
   activities?: ProcessActivity[];
@@ -50,6 +52,7 @@ export function ProcessDetailsGroup({ messageCount, toolCallCount, durationMs, c
   const parts = [`${count} ${t(count === 1 ? "chat.message" : "chat.messages")}`];
   if (tools > 0) parts.push(`${tools} ${t(tools === 1 ? "chat.toolCall" : "chat.toolCalls")}`);
   if (durationMs !== undefined) parts.push(t("chat.turnDuration", { time: formatTurnDuration(durationMs) }));
+  if (cost !== undefined && !open) parts.push(`${cost.toFixed(4)}`);
   const cacheMissText = cacheMisses && !open ? cacheMissSummaryText(t, cacheMisses) : undefined;
 
   useLayoutEffect(() => { followLatest.current = true; }, [open, folded]);
@@ -70,7 +73,7 @@ export function ProcessDetailsGroup({ messageCount, toolCallCount, durationMs, c
   }, [streaming, activities, live, open, folded]);
 
   const streamedProcess = streamHasProcess && streamProcess && <MessageView {...messageProps} message={streamProcess} isStreaming />;
-  const streamedAnswer = streaming && split && split.answerBlocks.length > 0 && <MessageView {...messageProps} message={{ ...streaming, content: split.answerBlocks }} isStreaming />;
+  const streamedAnswer = streaming && split && split.answerBlocks.length > 0 && <MessageView key={streamRateKey(streaming)} {...messageProps} message={{ ...streaming, content: split.answerBlocks }} isStreaming />;
 
   if (!folded) return <>{children}{streamedProcess}{streamedAnswer}</>;
 

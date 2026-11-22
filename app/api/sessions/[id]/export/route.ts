@@ -1,12 +1,13 @@
 import { randomUUID } from "crypto";
 import { execFile } from "child_process";
-import { mkdirSync, readFileSync, rmSync } from "fs";
+import { mkdtempSync, readFileSync, rmSync } from "fs";
 import { tmpdir } from "os";
 import { basename, join } from "path";
 import { promisify } from "util";
 import { pathToFileURL } from "url";
 import { NextResponse } from "next/server";
 import { resolveSessionPath } from "@/lib/session-reader";
+import { contentDisposition } from "@/lib/content-disposition";
 
 const execFileAsync = promisify(execFile);
 
@@ -23,18 +24,6 @@ async function getPiPackageDir(): Promise<string | null> {
   } catch {
     return null;
   }
-}
-
-function encodeHeaderValue(value: string): string {
-  return encodeURIComponent(value).replace(/[!'()*]/g, (ch) =>
-    `%${ch.charCodeAt(0).toString(16).toUpperCase()}`
-  );
-}
-
-function getContentDisposition(fileName: string, inline: boolean): string {
-  const fallback = fileName.replace(/[^\x20-\x7E]|["\\;\r\n]/g, "_") || "session.html";
-  const disposition = inline ? "inline" : "attachment";
-  return `${disposition}; filename="${fallback}"; filename*=UTF-8''${encodeHeaderValue(fileName)}`;
 }
 
 async function exportSession(filePath: string, outputPath: string): Promise<void> {
@@ -70,9 +59,10 @@ export async function GET(
       return NextResponse.json({ error: "Session not found" }, { status: 404 });
     }
 
-    const tempDir = join(tmpdir(), "pi-web-export");
-    mkdirSync(tempDir, { recursive: true });
-
+    // Per-request private directory. A fixed /tmp/pi-web-export is created by
+    // whichever OS user runs the first WebUI process; other users on the same
+    // host then cannot write into it and history export fails.
+    const tempDir = mkdtempSync(join(tmpdir(), "pi-web-export-"));
     const sessionBase = basename(filePath, ".jsonl");
     const fileName = `pi-session-${sessionBase}.html`;
     const outputPath = join(tempDir, `${randomUUID()}.html`);
@@ -84,7 +74,7 @@ export async function GET(
       return new Response(html, {
         headers: {
           "Content-Type": "text/html; charset=utf-8",
-          "Content-Disposition": getContentDisposition(fileName, inline),
+          "Content-Disposition": contentDisposition(inline ? "inline" : "attachment", fileName, "session.html"),
           "Cache-Control": "no-cache",
           "Content-Security-Policy": "frame-ancestors 'none'",
           "X-Content-Type-Options": "nosniff",
@@ -92,7 +82,7 @@ export async function GET(
         },
       });
     } finally {
-      rmSync(outputPath, { force: true });
+      rmSync(tempDir, { recursive: true, force: true });
     }
   } catch (error) {
     return NextResponse.json({ error: String(error) }, { status: 500 });

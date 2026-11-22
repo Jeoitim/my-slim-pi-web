@@ -17,23 +17,26 @@ import type {
 } from "@/lib/types";
 import { isBlockingExtensionUiRequest } from "@/lib/browser-notifications";
 import { normalizeToolCalls } from "@/lib/normalize";
-import { AgentCommandError, agentStatusUrl, isPromptRejectedError, sendAgentCommand } from "@/lib/agent-client";
+import { AgentCommandError, agentStatusUrl, EXTENSION_REPORTED_CODE, isPromptRejectedError, sendAgentCommand } from "@/lib/agent-client";
 import { createSideChat, SIDE_REFUSAL_MESSAGES } from "@/lib/side-chat-client";
 import { missingCwdFromBody } from "@/lib/missing-cwd";
+import { forkFailureMessage } from "@/lib/sidebar-actions";
 import {
   deleteSessionViewSnapshot,
   getSessionViewSnapshot,
   setSessionViewSnapshot,
   snapshotCoversLoadedEntries,
 } from "@/lib/session-view-cache";
-import { clearDraft, getDraft, parkedNewSessionDraftKey, rekeyDraft, restoreDraftSubmission } from "@/lib/draft-store";
+import { clearDraft, getDraft, holdStoredDraft, parkedNewSessionDraftKey, rekeyDraft, restoreDraftSubmission, setDraft, type ChatDraft } from "@/lib/draft-store";
 import { setPreferredToolPreset } from "@/lib/tool-preset-preference";
 import { CONFIGURED_TOOL_PRESET, getPresetFromToolNames, getToolNamesForPreset, type ToolEntry, type ToolPreset } from "@/lib/tool-presets";
 import type { SessionStatsInfo } from "@/lib/pi-types";
 import { mergeSessionStats, type SessionFileStats } from "@/lib/session-stats";
 import { formatSessionSummary } from "@/lib/session-stats-format";
 import { userMessageKey } from "@/lib/prompt-recovery";
-import { carryMessageKeys, messageRenderKeys } from "@/lib/message-keys";
+import { carryMessageKeys, messageRenderKeys, withLiveUserEntryId, type DeliveredUserMessage } from "@/lib/message-keys";
+import { createIdleMessageReads, entriesAfter } from "@/lib/idle-message-read";
+import { isHiddenCustomMessage } from "@/lib/message-display";
 import {
   AgentEventConnection,
   canReleaseHiddenEventStream,
@@ -45,7 +48,7 @@ import { HIDDEN_PAGE_GRACE_MS } from "@/hooks/usePageHidden";
 import type { DebugClientLease, DebugClientSession, DebugEventConnectionSnapshot, DebugStreamCloseReason } from "@/lib/debug-types";
 import { pageId, peekPageId, trackEventSource } from "@/lib/page-debug";
 import type { TranslationParams } from "@/lib/i18n/types";
-import { AGENT_EVENT_HEARTBEAT_MS, isNestedToolExecutionEvent, isSystemMessageEvent } from "@/lib/agent-event-wire";
+import { AGENT_EVENT_HEARTBEAT_MS, isNestedToolExecutionEvent, isSystemMessageEvent, toolResultFromExecutionEnd } from "@/lib/agent-event-wire";
 import { runStatePhase } from "@/lib/chat-phase-label";
 import { getToolExecutionProgress } from "@/lib/tool-execution-progress";
 import { CODEMODE_TOOL_NAME, getCodemodeProgress } from "@/lib/codemode-view";
@@ -55,9 +58,12 @@ import {
   piSubagentInspectFromWidget,
   type PiSubagentInspectorState,
 } from "@/lib/pi-subagents-view";
+import { createShownNotices, extensionErrorMessage } from "@/lib/startup-issues";
 import { bareMcpOpensSettings } from "@/lib/mcp-command";
+import { copyText } from "@/lib/clipboard";
 import type { SettingsSection } from "@/lib/settings-navigation";
 import { withTranscriptNotices, type TranscriptNotice } from "@/lib/transcript-notices";
+import { applyToolClockEvent, endedToolClocks, NO_TOOL_CLOCKS, withoutToolClock, type ToolClocks } from "@/lib/tool-clock";
 import {
   enqueueExtensionUiRequest,
   removeExtensionUiRequest,
@@ -203,6 +209,21 @@ export type BuiltinSlashCommandResult =
   | { handled: false }
   | { handled: true; message?: string; error?: string; action?: "openSessionStats" | "openSettings" | "compact" | "openSideChat" };
 
+/**
+ * A `!` command on its way into the transcript: running, or finished during a run, whose
+ * result pi holds until the run ends (`recordBashResult`) and writes before `agent_settled`.
+ * The first session read after the run's end has it, and the card goes then.
+ */
+export interface PendingBash {
+  command: string;
+  excludeFromContext: boolean;
+  /** When it started, the card's identity (its expanded state is per card). */
+  startedAt: number;
+  /** What the command printed so far, the tail of the wrapper's `bash_output` snapshots; the result replaces it. */
+  liveOutput?: string;
+  result?: { output: string; exitCode?: number; cancelled?: boolean; truncated?: boolean; fullOutputPath?: string };
+}
+
 /** How a run ended, for the completion sound and notifications. */
 export interface AgentEndInfo {
   /** The run was stopped (Esc, Stop, another client's abort), not finished: nothing to announce. */
@@ -221,11 +242,14 @@ export interface UseAgentSessionOptions {
   newSessionDraftKey: string | null;
   /** A run ended; `aborted` when it was stopped rather than finished (pi's `agent_settled.aborted`). */
   onAgentEnd?: (end: AgentEndInfo) => void;
+  /** An extension's `ctx.shutdown()` ended this session's runtime, as pi quits. Its file may remain. */
+  onSessionEnded?: (sessionId: string) => void;
   /** A top-level tool call finished; the files it touched may have changed. */
   onToolEnd?: (toolName: string) => void;
   onAttentionNeeded?: (request: BlockingExtensionUiRequest) => void;
   onSessionCreated?: (session: SessionInfo, sourceDraftKey: string) => void;
-  onSessionForked?: (newSessionId: string) => void;
+  /** A fork to open. `session` is its row when it may belong to another project (a fork into another folder). */
+  onSessionForked?: (newSessionId: string, session?: SessionInfo) => void;
   /** `/side`: a side chat was forked from this session; open its tab. The
    *  prompt argument, if any, seeds the new chat's composer. */
   onSideSession?: (session: SessionInfo, prompt: string | null) => void;
@@ -273,6 +297,20 @@ function asConcreteThinkingLevel(value?: string | null): ConcreteThinkingLevel |
 // Session id -> user entry being edited. ChatWindow remounts per session, so a
 // pending edit lives here as long as that session's in-memory draft does.
 const pendingHistoryEdits = new Map<string, string>();
+// The target lives only in this page, so its draft text is never stored: after
+// a reload the rewritten message would join the branch instead of forking it.
+const historyEditDraftHolds = new Map<string, () => void>();
+
+function setPendingHistoryEdit(sessionId: string, entryId: string | null): void {
+  if (entryId) {
+    pendingHistoryEdits.set(sessionId, entryId);
+    if (!historyEditDraftHolds.has(sessionId)) historyEditDraftHolds.set(sessionId, holdStoredDraft(sessionId));
+    return;
+  }
+  pendingHistoryEdits.delete(sessionId);
+  historyEditDraftHolds.get(sessionId)?.();
+  historyEditDraftHolds.delete(sessionId);
+}
 
 const PROMPT_SETTLE_INITIAL_DELAY_MS = 800;
 const PROMPT_SETTLE_POLL_MS = 600;
@@ -296,6 +334,9 @@ const MODELS_RETRY_DELAYS_MS = [2_000, 5_000, 10_000];
 const MAX_NOTICES = 5;
 const NOTICE_VISIBLE_MS = 5000;
 const NOTICE_EXIT_ANIMATION_MS = 180;
+// A session's startup issues come with every stream it opens (lib/rpc-manager.ts): this page
+// shows each once, through reconnects and returns to the session.
+const isFirstNoticeShowing = createShownNotices();
 function createNoticeId(): string {
   if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") {
     return crypto.randomUUID();
@@ -362,6 +403,8 @@ function readCompactResult(result: unknown, reason: string): CompactResultInfo |
 
 export interface ChatInputHandle {
   insertText: (text: string) => void;
+  setText: (text: string) => void;
+  pasteText: (text: string) => void;
   insertIfEmpty: (content: string) => void;
   replaceMessage: (message: UserMessage) => void;
   prependText: (text: string) => void;
@@ -423,7 +466,7 @@ type SlashCommandsResponse = {
 
 export function useAgentSession(opts: UseAgentSessionOptions) {
   const {
-    session, newSessionCwd, newSessionDraftKey, onAgentEnd, onToolEnd, onAttentionNeeded, onSessionCreated, onSessionForked, onSideSession,
+    session, newSessionCwd, newSessionDraftKey, onAgentEnd, onSessionEnded, onToolEnd, onAttentionNeeded, onSessionCreated, onSessionForked, onSideSession,
     modelsRefreshKey, onBranchDataChange, onSystemPromptChange, onSystemToolsChange, onSystemInfoLoaderChange, onSessionStatsPanelOpen,
     onOpenSettings, onDebugSnapshotReaderChange,
   } = opts;
@@ -437,9 +480,13 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const [activeLeafId, setActiveLeafId] = useState<string | null>(null);
   const [messages, setMessages] = useState<AgentMessage[]>([]);
   const [activeToolResults, setActiveToolResults] = useState<Map<string, ToolResultMessage>>(new Map());
+  // Running tool calls' clocks, on `performance.now()` (lib/tool-clock.ts).
+  const [toolClocks, setToolClocks] = useState<ToolClocks>(NO_TOOL_CLOCKS);
   const [entryIds, setEntryIds] = useState<string[]>([]);
   // Entry ids that took over a run's message keys when the file was read again (lib/message-keys.ts).
   const [messageKeyAliases, setMessageKeyAliases] = useState<ReadonlyMap<string, string>>(() => new Map());
+  // Entry ids of user messages sent during the run, for their "New session" only (withLiveUserEntryId()).
+  const [liveUserEntryIds, setLiveUserEntryIds] = useState<ReadonlyMap<AgentMessage, string>>(() => new Map());
   const [historyCursor, setHistoryCursor] = useState<string | null>(null);
   const [hasEarlierMessages, setHasEarlierMessages] = useState(false);
   const [earlierTurnCount, setEarlierTurnCount] = useState(0);
@@ -448,7 +495,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const dispatch = streamingStore.dispatch;
   const [agentRunning, setAgentRunning] = useState(false);
   const [bashRunning, setBashRunning] = useState(false);
-  const [pendingBash, setPendingBash] = useState<{ command: string; excludeFromContext: boolean } | null>(null);
+  const [pendingBash, setPendingBash] = useState<PendingBash | null>(null);
   const [modelNames, setModelNames] = useState<Record<string, string>>({});
   const [modelList, setModelList] = useState<ModelEntry[]>([]);
   const [modelError, setModelError] = useState<string | null>(null);
@@ -533,6 +580,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const isCompactingRef = useRef(false);
   const extensionUiCountRef = useRef(0);
   const sessionIdRef = useRef<string | null>(session?.id ?? null);
+  const endedSessionRef = useRef<string | null>(null);
   const sessionPropIdRef = useRef<string | null>(session?.id ?? null);
   // False while the session carries no tool selection of its own, so its loadout
   // follows settings.json defaultTools and the picker must say so rather than
@@ -543,6 +591,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const rpcPromptPendingRef = useRef(false);
   const notifiedPromptRunIdRef = useRef(-1);
   const bashRunningRef = useRef(false);
+  /** The session read under way when a `!` result was held for the run's end (`PendingBash`). */
+  const deferredBashReadSeqRef = useRef(0);
   const bashRecoveryIdRef = useRef(0);
   const handleAgentEventRef = useRef<((event: AgentEvent) => void) | null>(null);
   const initialScrollDoneRef = useRef(Boolean(opts.deferInitialScroll));
@@ -570,6 +620,10 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const defaultThinkingLevelRef = useRef<ConcreteThinkingLevel | null>(null);
   const promptRunIdRef = useRef(0);
   const optimisticUserMessageKeyRef = useRef<string | null>(null);
+  // The optimistic bubble itself, set with its key.
+  const optimisticUserMessageRef = useRef<AgentMessage | null>(null);
+  // The last user message_end shown, until the wrapper's user_message_entry names its entry.
+  const deliveredUserMessageRef = useRef<DeliveredUserMessage | null>(null);
   // The run whose prompt the server is known to have got: one of its events
   // (agent_start, prompt_done, queue_update, its user message) arrived, maybe
   // before its request failed. Later ones clear the unconfirmed record itself.
@@ -613,6 +667,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   // before each (re)connect, the debug reader to show it.
   const wantsEventStream = useCallback((sid: string) => (
     sessionHookMountedRef.current
+    && endedSessionRef.current !== sid
     && sessionIdRef.current === sid
     && (
       agentRunningRef.current
@@ -724,13 +779,12 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   // so cancelling or reloading never hides the rest of the conversation.
   const [editEntryId, setEditEntryId] = useState(() => {
     const sid = session?.id;
-    if (sid && !getDraft(sid)) pendingHistoryEdits.delete(sid);
+    if (sid && !getDraft(sid)) setPendingHistoryEdit(sid, null);
     return (sid && pendingHistoryEdits.get(sid)) || null;
   });
   const setEdit = useCallback((entryId: string | null) => {
     if (!session?.id) return;
-    if (entryId) pendingHistoryEdits.set(session.id, entryId);
-    else pendingHistoryEdits.delete(session.id);
+    setPendingHistoryEdit(session.id, entryId);
     setEditEntryId(entryId);
   }, [session?.id]);
   const handleEditContent = useCallback((message: UserMessage, entryId: string) => {
@@ -803,6 +857,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const flight = (async (): Promise<unknown> => {
     let messagesLoaded = false;
     const readSeq = ++sessionReadSeqRef.current;
+    // pi writes a `!` result held during a run before the run settles: a read
+    // started once the run is over has it, and the card that showed it goes.
+    const afterRun = !agentRunningRef.current;
     try {
       if (showLoading) setLoading(true);
       const params = new URLSearchParams({ deferThinking: "1", deferMedia: "1", tree: "summary" });
@@ -876,6 +933,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         const previous = { messages: messagesRef.current, entryIds: entryIdsRef.current };
         const next = { messages: persistedMessages, entryIds: d.context.entryIds ?? [] };
         setMessageKeyAliases((aliases) => carryMessageKeys({ ...previous, aliases }, next));
+        // The read has their entry ids in `entryIds`.
+        setLiveUserEntryIds(new Map());
         setMessages(next.messages);
         setEntryIds(next.entryIds);
         setHistoryCursor(d.context.oldestEntryId);
@@ -916,6 +975,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
 
       messagesLoaded = true;
+      if (afterRun && readSeq > deferredBashReadSeqRef.current) setPendingBash((pending) => (pending?.result ? null : pending));
       if (showLoading) setLoading(false);
       if (!includeState) return null;
 
@@ -951,7 +1011,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       if (showLoading && !messagesLoaded) setLoading(false);
     }
     })();
-    if (!options?.force) loadFlightsRef.current.set(flightKey, flight);
+    loadFlightsRef.current.set(flightKey, flight);
     flight.finally(() => {
       if (loadFlightsRef.current.get(flightKey) === flight) loadFlightsRef.current.delete(flightKey);
     });
@@ -1039,6 +1099,25 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }, provisionalDraftKey);
   }, [isNew, newSessionCwd, newSessionDraftKey, onSessionCreated, opts.chatInputRef]);
 
+  // The model and reasoning level a fresh composer's session started with, unless the user
+  // picked others since `selectedModel` / `selectedThinkingLevel` were read.
+  const applyNewSessionStartState = useCallback((
+    state: { model?: SelectedModel | null; thinkingLevel?: string },
+    selectedModel: SelectedModel | null,
+    selectedThinkingLevel: ConcreteThinkingLevel | null,
+  ) => {
+    if (state.model && newSessionModelOverrideRef.current === selectedModel) {
+      setPendingModel(state.model);
+      if (!selectedModel) setNewSessionDefaultModel(state.model);
+    }
+    if (state.thinkingLevel && thinkingLevelOverrideRef.current === selectedThinkingLevel) {
+      setLiveThinkingLevel(asConcreteThinkingLevel(state.thinkingLevel));
+      if (!selectedThinkingLevel) {
+        setNewSessionDefaultThinkingLevel(asConcreteThinkingLevel(state.thinkingLevel));
+      }
+    }
+  }, []);
+
   const ensureNewSession = useCallback(async () => {
     if (sessionIdRef.current) return sessionIdRef.current;
     if (!isNew || !newSessionCwd) return sessionIdRef.current;
@@ -1082,19 +1161,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       };
       const realId = result.sessionId;
       sessionIdRef.current = realId;
-      if (result.model && newSessionModelOverrideRef.current === selectedModel) {
-        setPendingModel(result.model);
-        if (!selectedModel) setNewSessionDefaultModel(result.model);
-      }
-      if (
-        result.thinkingLevel
-        && thinkingLevelOverrideRef.current === selectedThinkingLevel
-      ) {
-        setLiveThinkingLevel(asConcreteThinkingLevel(result.thinkingLevel));
-        if (!selectedThinkingLevel) {
-          setNewSessionDefaultThinkingLevel(asConcreteThinkingLevel(result.thinkingLevel));
-        }
-      }
+      applyNewSessionStartState(result, selectedModel, selectedThinkingLevel);
       return realId;
     })();
 
@@ -1104,7 +1171,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } finally {
       ensuringNewSessionRef.current = null;
     }
-  }, [isNew, newSessionCwd, toolPreset]);
+  }, [applyNewSessionStartState, isNew, newSessionCwd, toolPreset]);
 
   const handlePermissionModeChange = useCallback(async (mode: PermissionMode) => {
     const id = await ensureNewSession();
@@ -1143,6 +1210,29 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     replaceSlashCommands([]);
   }, [replaceSlashCommands]);
 
+  // An extension's session_start may wait on a dialog, which only the event stream shows (#1678),
+  // and get_commands waits for session_start. A fresh composer has no stream (a prompt and a `!`
+  // command open one themselves), so it holds one while the request is out, and lets go of it
+  // after, as before, unless something in the page still needs it. A selected session keeps its own.
+  const withSessionStartStream = useCallback(async <T,>(sid: string, request: () => Promise<T>): Promise<T> => {
+    const fresh = sessionPropIdRef.current === null && sessionHookMountedRef.current;
+    if (fresh) void eventConnectionRef.current?.ensureConnected(sid).catch(() => {});
+    try {
+      return await request();
+    } finally {
+      if (
+        fresh
+        && sessionPropIdRef.current === null
+        && sessionIdRef.current === sid
+        && extensionUiCountRef.current === 0
+        && !agentRunningRef.current
+        && !bashRunningRef.current
+      ) {
+        eventConnectionRef.current?.close("grace_end");
+      }
+    }
+  }, []);
+
   // Null when get_commands failed, which an empty list (a Chat-only session's) must not be mistaken for.
   const requestSlashCommands = useCallback((): Promise<SlashCommandInfo[] | null> => {
     const generation = ++slashCommandsGenerationRef.current;
@@ -1155,7 +1245,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       }
       setSlashCommandsLoading(true);
       try {
-        const data = await sendAgentCommand<SlashCommandsResponse>(sid, { type: "get_commands" });
+        const data = await withSessionStartStream(sid, () => sendAgentCommand<SlashCommandsResponse>(sid, { type: "get_commands" }));
         const commands = data?.commands ?? [];
         if (current()) replaceSlashCommands(commands);
         return commands;
@@ -1174,7 +1264,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     };
     load.then(settle, settle);
     return load;
-  }, [ensureNewSession, replaceSlashCommands]);
+  }, [ensureNewSession, replaceSlashCommands, withSessionStartStream]);
 
   const loadSlashCommands = useCallback(async () => (await requestSlashCommands()) ?? [], [requestSlashCommands]);
 
@@ -1368,8 +1458,27 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       });
     } catch (e) {
       console.error("Failed to send extension UI response:", e);
+      return;
     }
-  }, []);
+    // A fresh composer heard its model from /api/agent/new, which may have answered while a
+    // session_start handler waited on this dialog (#1678); the handler may pick the model next.
+    // get_state answers once session_start has finished (or waits on another dialog).
+    if (sessionPropIdRef.current !== null) return;
+    const selectedModel = newSessionModelOverrideRef.current;
+    const selectedThinkingLevel = thinkingLevelOverrideRef.current;
+    try {
+      const state = await sendAgentCommand<AgentStateResponse>(sid, { type: "get_state" });
+      if (!sessionHookMountedRef.current || sessionIdRef.current !== sid || sessionPropIdRef.current !== null) return;
+      applyNewSessionStartState({
+        model: state.model ? { provider: state.model.provider, modelId: state.model.id } : null,
+        thinkingLevel: state.thinkingLevel,
+      }, selectedModel, selectedThinkingLevel);
+      // Extensions may have changed the prompt the System panel shows as session_start went on.
+      if (state.systemPrompt !== undefined) setSystemPrompt(state.systemPrompt);
+    } catch {
+      // The composer keeps the model it shows; the first run's state corrects it.
+    }
+  }, [applyNewSessionStartState]);
 
   const sendExtensionCustomInput = useCallback(async (request: ExtensionUiCustomRequest, data: string) => {
     const sid = sessionIdRef.current;
@@ -1514,6 +1623,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setExtensionDialogs((queue) => enqueueExtensionUiRequest(queue, request));
         break;
       case "notify": {
+        if (request.id && !isFirstNoticeShowing(request.id)) break;
         addNotice({
           id: request.id,
           message: stripAnsi(request.message),
@@ -1558,7 +1668,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (request.title) document.title = stripAnsi(request.title);
         break;
       case "set_editor_text":
-        opts.chatInputRef?.current?.insertText(stripAnsi(request.text));
+        // pi's editor setText(): the draft is replaced (an empty text clears it).
+        opts.chatInputRef?.current?.setText(stripAnsi(request.text));
         break;
       case "custom":
         setExtensionCustomUis((queue) => request.closed
@@ -1575,6 +1686,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     setAgentPhase(null);
     setRetryInfo(null);
     setActiveToolResults(new Map());
+    setToolClocks(NO_TOOL_CLOCKS);
     dispatch({ type: "end" });
     return wasRunning;
   }, [dispatch]);
@@ -1814,8 +1926,83 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     agentRunningRef.current = agentRunning;
   }, [agentRunning]);
 
+  /**
+   * A message an extension posted while idle: the branch's newest entries (a
+   * tail read) appended after the loaded window, so the pages the reader loaded
+   * above stay. A read that does not reach back to the window's last entry, or a
+   * window holding messages no entry backs, takes the full read.
+   */
+  const idleMessageReadWanted = useCallback((sid: string) => (
+    sessionHookMountedRef.current && sessionIdRef.current === sid && !agentRunningRef.current
+  ), []);
+  // The leaf an append moved the view to. activeLeafId stays the last full
+  // read's, as the tree the navigator finds it in does; /clone copies this one
+  // while the view still ends with that append and no read moved the leaf.
+  const appendedLeafRef = useRef<{ base: string | null; lastEntryId: string; leafId: string } | null>(null);
+  // A `!` command's record a tail read found before the command's own read.
+  const idleReadAfterBashRef = useRef<string | null>(null);
+  const readIdleMessages = useCallback(async (sid: string) => {
+    // `tail` counts user and assistant entries: 1 reads from the newest of them to the leaf.
+    const params = new URLSearchParams({ deferThinking: "1", deferMedia: "1", tail: "1" });
+    const res = await fetch(`/api/sessions/${encodeURIComponent(sid)}/context?${params}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const { context, leafId } = await res.json() as { context: SessionData["context"]; leafId?: string | null };
+    // A run started meanwhile shows its own messages, and its end reads them all.
+    if (!idleMessageReadWanted(sid)) return;
+    // The window as it is now: a read that landed meanwhile started after the
+    // message, so nothing follows its last entry then.
+    const anchor = entryIdsRef.current.at(-1);
+    const anchorMessage = messagesRef.current.at(-1);
+    const added = anchor !== undefined && messagesRef.current.length === entryIdsRef.current.length
+      ? entriesAfter(anchor, { messages: context.messages, entryIds: context.entryIds ?? [] })
+      : null;
+    if (!added) {
+      await loadSession(sid);
+      return;
+    }
+    if (added.entryIds.length === 0) return;
+    // A `!` command's record ahead of the command's own read would show beside its
+    // pending card: that read shows it, and this one comes again after the command.
+    if (bashRunningRef.current && added.messages.some((message) => message.role === "bashExecution")) {
+      idleReadAfterBashRef.current = sid;
+      return;
+    }
+    // The refs move with the state: a read landing before the render appends after these.
+    entryIdsRef.current = [...entryIdsRef.current, ...added.entryIds];
+    messagesRef.current = [...messagesRef.current, ...added.messages];
+    setEntryIds((prev) => (prev.at(-1) === anchor ? [...prev, ...added.entryIds] : prev));
+    setMessages((prev) => (prev.at(-1) === anchorMessage ? [...prev, ...added.messages] : prev));
+    if (leafId) appendedLeafRef.current = { base: activeLeafIdRef.current, lastEntryId: added.entryIds.at(-1)!, leafId };
+    // The cached view covers them too, or the unmount drops it (snapshotCoversLoadedEntries()).
+    // Its revision stays the old one, so coming back still reads the session.
+    const snapshot = getSessionViewSnapshot(sid);
+    if (snapshot) setSessionViewSnapshot({ ...snapshot, loadedEntryIds: [...snapshot.loadedEntryIds, ...added.entryIds] });
+  }, [idleMessageReadWanted, loadSession]);
+  const readIdleMessagesRef = useRef(readIdleMessages);
+  readIdleMessagesRef.current = readIdleMessages;
+  const idleMessageReadsRef = useRef<((sid: string) => void) | null>(null);
+  idleMessageReadsRef.current ??= createIdleMessageReads({
+    pendingReads: (sid) => [loadFlightsRef.current.get(sid), loadFlightsRef.current.get(`force:${sid}`)],
+    read: (sid) => readIdleMessagesRef.current(sid),
+    wanted: idleMessageReadWanted,
+    onError: (error) => console.error("Failed to read a message sent while idle:", error),
+  });
+
   const handleAgentEvent = useCallback((event: AgentEvent) => {
+    if (endedSessionRef.current) return;
     switch (event.type) {
+      case "session_ended": {
+        const sid = sessionIdRef.current;
+        if (!sid || event.sessionId !== sid) return;
+        // The owner leaves the session (a fresh composer, or the tab closes) and this view
+        // unmounts; until then nothing reconnects, which would start the runtime again.
+        endedSessionRef.current = sid;
+        cancelEventStreamGrace();
+        eventConnectionRef.current?.close();
+        deleteSessionViewSnapshot(sid);
+        onSessionEnded?.(sid);
+        return;
+      }
       case "connected": {
         dispatch({ type: "end" });
         if (Array.isArray(event.pendingExtensionUiIds)) {
@@ -1824,6 +2011,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           setExtensionDialogs((queue) => retainExtensionUiRequests(queue, pending));
           setExtensionCustomUis((queue) => retainExtensionUiRequests(queue, pending));
         }
+        // The replay that follows brings each running call's start with its elapsed time.
+        setToolClocks(endedToolClocks);
         if (event.isStreaming === true) {
           cancelEventStreamGrace();
           sdkAgentActiveRef.current = true;
@@ -1925,7 +2114,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "extension_error":
         addNotice({
           type: "error",
-          message: (event.error as string | undefined) ?? "Extension command failed",
+          message: extensionErrorMessage(event.extensionPath, (event.error as string | undefined) ?? "Extension command failed"),
         });
         break;
       case "message_start":
@@ -1967,11 +2156,27 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         }
         break;
       }
+      case "user_message_entry": {
+        // The entry pi appended for the user message_end just before (#1746).
+        const delivered = deliveredUserMessageRef.current;
+        deliveredUserMessageRef.current = null;
+        setLiveUserEntryIds((ids) => withLiveUserEntryId(ids, delivered, event));
+        break;
+      }
       case "message_end": {
         // Same late-event guard: after reconcile finished this run,
         // loadSession already loaded this message from the session file —
         // appending it again would duplicate it.
-        if (!agentRunningRef.current) break;
+        if (!agentRunningRef.current) {
+          // An extension's sendMessage({ display: true }) while idle (a timer, a
+          // watcher): pi appends it to the session before this event, so a session
+          // read (the live wrapper's SessionManager) shows it, as pi's TUI prints it at once.
+          const idle = event.message as { role?: AgentMessage["role"]; display?: boolean } | undefined;
+          if (idle?.role === "custom" && !isHiddenCustomMessage(idle) && sessionIdRef.current) {
+            idleMessageReadsRef.current?.(sessionIdRef.current);
+          }
+          break;
+        }
         if (isSystemMessageEvent(event)) break;
         const completed = event.message as AgentMessage | undefined;
         if (completed && completed.role === "user") {
@@ -1983,6 +2188,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           const deliveredKey = userMessageKey(delivered);
           const optimisticKey = optimisticUserMessageKeyRef.current;
           optimisticUserMessageKeyRef.current = null;
+          const bubble = optimisticKey === deliveredKey ? optimisticUserMessageRef.current : null;
+          deliveredUserMessageRef.current = { timestamp: delivered.timestamp, messages: bubble ? [bubble, delivered] : [delivered] };
           // While the run's own bubble waits, a delivered user message is its prompt.
           if (optimisticKey) markPromptLanded();
           setMessages((prev) => {
@@ -1998,6 +2205,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           // pi's showCacheMissNotices (#1265): the wrapper sends them beside the message.
           const notices = Array.isArray(event.transcriptNotices) ? event.transcriptNotices as TranscriptNotice[] : undefined;
           setMessages((prev) => [...prev, withTranscriptNotices(normalizeToolCalls(completed), notices)]);
+          if (completed.role === "toolResult") {
+            const callId = (completed as ToolResultMessage).toolCallId;
+            setToolClocks((prev) => withoutToolClock(prev, callId));
+            setActiveToolResults((prev) => {
+              if (!prev.has(callId)) return prev;
+              const next = new Map(prev);
+              next.delete(callId);
+              return next;
+            });
+          }
           if (completed.role === "assistant") {
             const sid = sessionIdRef.current;
             if (sid) void refreshContextUsage(sid);
@@ -2014,6 +2231,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (isNestedToolExecutionEvent(event)) break;
         const id = event.toolCallId as string;
         const name = event.toolName as string;
+        const startedAt = performance.now();
+        setToolClocks((prev) => applyToolClockEvent(prev, event, startedAt));
         setAgentPhase((prev) => {
           const tools = prev?.kind === "running_tools" ? [...prev.tools] : [];
           if (!tools.some((t) => t.id === id)) tools.push({ id, name });
@@ -2064,10 +2283,14 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         if (isNestedToolExecutionEvent(event)) break;
         const id = event.toolCallId as string;
         onToolEnd?.(event.toolName as string);
+        const endedAt = performance.now();
+        setToolClocks((prev) => applyToolClockEvent(prev, event, endedAt));
+        const result = toolResultFromExecutionEnd(event);
         setActiveToolResults((prev) => {
-          if (!prev.has(id)) return prev;
+          if (!result && !prev.has(id)) return prev;
           const next = new Map(prev);
-          next.delete(id);
+          if (result) next.set(id, result);
+          else next.delete(id);
           return next;
         });
         setAgentPhase((prev) => {
@@ -2091,6 +2314,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "auto_retry_end":
         setRetryInfo(null);
         break;
+      // A compaction's or branch summary's summarizer call failed and waits to try
+      // again, on the same retry budget as a turn: pi's TUI shows the error and the
+      // countdown, here the retry banner does for the wait, as for a turn's retry.
+      case "summarization_retry_scheduled":
+        setRetryInfo({ attempt: event.attempt as number, maxAttempts: event.maxAttempts as number, errorMessage: event.errorMessage as string | undefined });
+        break;
+      case "summarization_retry_attempt_start":
+      case "summarization_retry_finished":
+        setRetryInfo(null);
+        break;
       case "auto_compaction_start":
       case "compaction_start":
         setIsCompacting(true);
@@ -2100,6 +2333,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       case "auto_compaction_end":
       case "compaction_end":
         setIsCompacting(false);
+        // pi sends summarization_retry_finished first; a stream down for that
+        // retry missed it, and its banner would stay above an idle composer.
+        setRetryInfo(null);
         if (event.errorMessage) {
           setCompactError(event.errorMessage as string);
           setCompactResult(null);
@@ -2108,6 +2344,19 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (sessionIdRef.current) loadSession(sessionIdRef.current);
         }
         break;
+      case "bash_output": {
+        // The wrapper's snapshot of a running `!` command's output tail.
+        const output = event.output;
+        if (!bashRunningRef.current || typeof output !== "string") break;
+        // A slow stream may still carry the previous command's last snapshot.
+        setPendingBash((pending) => (
+          pending && !pending.result && pending.command === event.command ? { ...pending, liveOutput: output } : pending
+        ));
+        break;
+      }
+      case "editor_paste":
+        if (typeof event.text === "string") opts.chatInputRef?.current?.pasteText(stripAnsi(event.text));
+        break;
       case "extension_ui_request":
         handleExtensionUiRequest(event as ExtensionUiRequest);
         break;
@@ -2115,13 +2364,17 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         setExtensionDialogs((queue) => removeExtensionUiRequest(queue, event.id as string));
         break;
     }
-  }, [addNotice, applyLiveUsage, cancelEventStreamGrace, dispatch, handleExtensionUiRequest, loadSession, markPromptLanded, notifyPromptStage, onAgentEnd, onToolEnd, refreshContextUsage, scheduleEventStreamClose, scrollToBottom, settleUiStage, syncLiveModel]);
+  }, [addNotice, applyLiveUsage, opts.chatInputRef, cancelEventStreamGrace, dispatch, handleExtensionUiRequest, loadSession, markPromptLanded, notifyPromptStage, onAgentEnd, onSessionEnded, onToolEnd, refreshContextUsage, scheduleEventStreamClose, scrollToBottom, settleUiStage, syncLiveModel]);
   handleAgentEventRef.current = handleAgentEvent;
 
   const handleSend = useCallback(async (message: string, images?: AttachedImage[]) => {
     const trimmedMessage = message.trim();
     if (!trimmedMessage && !images?.length) return;
-    if (agentRunningRef.current || bashRunningRef.current) {
+    const isBashCommand = !images?.length && trimmedMessage.startsWith("!");
+    // A `!` command may run beside a run, as in pi's TUI; one at a time.
+    if (bashRunningRef.current || (agentRunningRef.current && !isBashCommand)) {
+      // pi's TUI says why a second command waits.
+      if (bashRunningRef.current && isBashCommand) addNotice({ type: "warning", message: translate("chat.bashAlreadyRunning") });
       restoreSubmission(message, images, composerDraftKey);
       return;
     }
@@ -2138,7 +2391,6 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     }
     const isSlashCommandPrompt = !images?.length && trimmedMessage.startsWith("/");
 
-    const isBashCommand = !images?.length && trimmedMessage.startsWith("!");
     if (isBashCommand) {
       const isExcluded = trimmedMessage.startsWith("!!");
       const bashCmd = (isExcluded ? trimmedMessage.slice(2) : trimmedMessage.slice(1)).trim();
@@ -2170,6 +2422,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     const sameTextAfterSend = countUserMessages(messagesRef.current.slice(savedViewIds.length), userKey);
     setMessages((prev) => [...prev, userMsg]);
     optimisticUserMessageKeyRef.current = userKey;
+    optimisticUserMessageRef.current = userMsg;
     promptRunIdRef.current = promptRunId;
     agentRunningRef.current = true;
     setAgentRunning(true);
@@ -2288,35 +2541,66 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setAgentPhase(null);
       dispatch({ type: "end" });
     }
-  }, [isNew, newSessionCwd, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, waitForPromptSettlement, addNotice, releaseUnconfirmedSend, cancelEventStreamGrace, closeEvents, composerDraftKey, dispatch, reconcileAgentState, restoreSubmission, editEntryId, setEdit]);
+  }, [isNew, newSessionCwd, newSessionModel, session, ensureNewSession, ensureEventsConnected, promoteNewSession, waitForPromptSettlement, addNotice, releaseUnconfirmedSend, cancelEventStreamGrace, closeEvents, composerDraftKey, dispatch, reconcileAgentState, restoreSubmission, editEntryId, setEdit, translate]);
 
   const executeBash = useCallback(async (command: string, excludeFromContext: boolean) => {
-    if (agentRunningRef.current || bashRunningRef.current) return;
+    if (bashRunningRef.current) return;
     const inputText = `${excludeFromContext ? "!!" : "!"}${command}`;
     bashRunningRef.current = true;
-    setPendingBash({ command, excludeFromContext });
+    const startedAt = Date.now();
+    setPendingBash({ command, excludeFromContext, startedAt });
     setBashRunning(true);
+    let deferred: PendingBash | null = null;
     try {
       const sid = sessionIdRef.current ?? session?.id ?? await ensureNewSession();
       if (!sid) throw new Error("Unable to create a session for the shell command");
-      await sendAgentCommand(sid, {
+      // A `user_bash` handler's dialog (ctx.ui.confirm…) reaches the page only
+      // through the stream, which a fresh composer has not opened yet. The
+      // output streams through it too; without one it comes at the end.
+      await ensureEventsConnected(sid).catch(() => {});
+      const result = await sendAgentCommand<PendingBash["result"]>(sid, {
         type: "bash",
         command,
         excludeFromContext,
       });
-      await loadSession(sid);
-      promoteNewSession(1, inputText);
+      if (agentRunningRef.current && result) {
+        // pi writes it once the run ends; the card shows the output until then.
+        deferred = { command, excludeFromContext, startedAt, result };
+        // Only a read started after this one may take the card away.
+        deferredBashReadSeqRef.current = sessionReadSeqRef.current;
+      } else {
+        await loadSession(sid);
+        promoteNewSession(1, inputText);
+      }
     } catch (e) {
       console.error("Failed to execute shell command:", e);
-      addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
+      // A handler's error showed already, as the runner's extension_error.
+      if (!(e instanceof AgentCommandError && e.code === EXTENSION_REPORTED_CODE)) {
+        addNotice({ type: "error", message: e instanceof Error ? e.message : String(e) });
+      }
       restoreSubmission(inputText, undefined, composerDraftKey);
     } finally {
       bashRunningRef.current = false;
-      setPendingBash(null);
+      setPendingBash(deferred);
       setBashRunning(false);
+      const idleRead = idleReadAfterBashRef.current;
+      idleReadAfterBashRef.current = null;
+      if (idleRead) idleMessageReadsRef.current?.(idleRead);
     }
-  }, [addNotice, composerDraftKey, ensureNewSession, loadSession, promoteNewSession, restoreSubmission, session]);
+  }, [addNotice, composerDraftKey, ensureEventsConnected, ensureNewSession, loadSession, promoteNewSession, restoreSubmission, session]);
   executeBashRef.current = executeBash;
+
+  // A `!` result held for the run's end (`PendingBash.result`): pi wrote it before the run
+  // settled, so a read started now has it and the card goes (`afterRun`). A fresh read:
+  // prompt_done and finishPromptWithoutStream() read before they settle, and any read
+  // would join the one agent_end started while the run went on.
+  const heldBashResult = pendingBash?.result;
+  useEffect(() => {
+    if (agentRunning || !heldBashResult) return;
+    const sid = sessionIdRef.current;
+    if (sid) void loadSession(sid, false, false, { force: true });
+  }, [agentRunning, heldBashResult, loadSession]);
+
 
   /** Recall's and Stop's queued texts, and the images of prompts parked behind a compaction, back in the composer. */
   const restoreRecalledPrompts = useCallback((recalled: RecalledPrompts | null | undefined) => {
@@ -2328,7 +2612,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   const handleAbort = useCallback(async () => {
     const sid = sessionIdRef.current;
     if (!sid) return;
-    if (bashRunningRef.current) {
+    // Beside a run, Stop stops the run first, as Esc does in pi's TUI; the command next.
+    if (bashRunningRef.current && !agentRunningRef.current) {
       try {
         await sendAgentCommand(sid, { type: "abort_bash" });
       } catch (e) {
@@ -2337,14 +2622,19 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       return;
     }
     try {
-      // Prompts parked behind a compaction come back for the composer, as Recall's do.
-      restoreRecalledPrompts(await sendAgentCommand<RecalledPrompts | null>(sid, { type: "abort" }));
+      // Stop takes the queued messages back for the composer, as Esc does in pi's TUI,
+      // with the prompts parked behind a compaction (and their images), as Recall does.
+      const recalled = await sendAgentCommand<RecalledPrompts | null>(sid, { type: "abort" });
+      // The server's queue_update only reaches us while SSE is connected; clear locally too.
+      if (recalled) setQueuedMessages({ steering: [], followUp: [] });
+      restoreRecalledPrompts(recalled);
     } catch (e) {
       console.error("Failed to abort:", e);
     }
   }, [restoreRecalledPrompts]);
 
-  const handleFork = useCallback(async (entryId: string) => {
+  /** `draft` is what the new session's composer starts with: the forked message, as pi's /fork leaves it in the editor. */
+  const handleFork = useCallback(async (entryId: string, draft?: ChatDraft) => {
     if (bashRunningRef.current) return;
     const sid = sessionIdRef.current;
     if (!sid) return;
@@ -2356,6 +2646,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       });
       const { cancelled, newSessionId } = result ?? {};
       if (!cancelled && newSessionId) {
+        if (draft) setDraft(newSessionId, draft);
         onSessionForked?.(newSessionId);
       }
     } catch (e) {
@@ -2365,6 +2656,38 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
       setForkingEntryId(null);
     }
   }, [addNotice, onSessionForked]);
+
+  /**
+   * pi's Fork for a session whose folder is gone (pi 1.5.2): the whole session
+   * copied into `cwd`, a folder that exists (POST /api/sessions/[id]/fork
+   * `{ cwd }`), then opened. The draft goes along, as the refused prompt was
+   * given back to it. Resolves to an error to show, or null.
+   */
+  const forkIntoCwd = useCallback(async (cwd: string): Promise<string | null> => {
+    const sid = sessionIdRef.current;
+    if (!sid) return translate("sidebar.forkNotFound");
+    try {
+      const res = await fetch(`/api/sessions/${encodeURIComponent(sid)}/fork`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ cwd }),
+      });
+      const data = await res.json().catch(() => ({})) as { sessionId?: string; session?: SessionInfo; code?: string; error?: string };
+      if (!res.ok || !data.sessionId || !data.session) {
+        const { key, params } = forkFailureMessage(data.code, data.error ?? `HTTP ${res.status}`);
+        return translate(key, params);
+      }
+      const input = opts.chatInputRef?.current;
+      if (input) input.rekeyDraft(sid, data.sessionId);
+      else rekeyDraft(sid, data.sessionId);
+      onSessionForked?.(data.sessionId, data.session);
+      return null;
+    } catch (e) {
+      return translate("sidebar.forkFailed", { error: e instanceof Error ? e.message : String(e) });
+    }
+  }, [onSessionForked, opts.chatInputRef, translate]);
+  const canForkMissingCwd = Boolean(missingCwd) && !isNew && Boolean(session?.id)
+    && session?.relation?.kind !== "subagent" && session?.relation?.kind !== "side";
 
   const handleNavigate = useCallback(async (entryId: string): Promise<boolean> => {
     if (bashRunningRef.current) return false;
@@ -2487,7 +2810,9 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
         ...(customInstructions ? { customInstructions } : {}),
       });
       setCompactResult(readCompactResult(result, "manual"));
-      if (await loadSession(sid, true)) promoteNewSession();
+      // Keep the composer mounted: a loading screen would discard its focus
+      // and selection while the user is writing the next prompt.
+      if (await loadSession(sid)) promoteNewSession();
       return true;
     } catch (e) {
       setCompactError(e instanceof Error ? e.message : String(e));
@@ -2751,7 +3076,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
         case "session": {
           if (!sid) return complete({ handled: true, error: "No active session" });
-          if (!onSessionStatsPanelOpen) return complete({ handled: true, message: formatSessionSummary(sessionStats) });
+          if (!onSessionStatsPanelOpen) return complete({ handled: true, message: formatSessionSummary(sessionStats, translate) });
           const stats = await sendAgentCommand<SessionStatsInfo>(sid, { type: "get_session_stats" });
           if (stats) {
             setSessionStatsOverride(stats);
@@ -2779,6 +3104,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           const data = await sendAgentCommand<LastAssistantTextResponse>(sid, { type: "get_last_assistant_text" });
           const textToCopy = data?.text ?? "";
           if (!textToCopy) return complete({ handled: true, error: "No assistant message to copy" });
+          // copyText falls back to execCommand where navigator.clipboard is
+          // missing: a page served over plain HTTP from a LAN address.
           await copyText(textToCopy);
           return complete({ handled: true, message: "Copied last assistant message" });
         }
@@ -2788,10 +3115,16 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
           if (agentRunningRef.current || bashRunningRef.current) {
             return complete({ handled: true, error: "Cannot clone while the session is running" });
           }
-          const result = await sendAgentCommand<{ cancelled?: boolean; newSessionId?: string }>(sid, {
+          const appended = appendedLeafRef.current;
+          const result = await sendAgentCommand<{ cancelled?: boolean; byExtension?: boolean; newSessionId?: string }>(sid, {
             type: "clone",
-            leafId: activeLeafId,
+            leafId: appended?.base === activeLeafId && appended.lastEntryId === entryIdsRef.current.at(-1)
+              ? appended.leafId
+              : activeLeafId,
           });
+          // A `session_before_fork` handler said no: as pi's /clone, nothing more is said
+          // (the handler tells why, if it wants to).
+          if (result?.cancelled && result.byExtension) return { handled: true };
           if (result?.cancelled || !result?.newSessionId) {
             return complete({ handled: true, error: "Cannot clone an empty or unsaved session" });
           }
@@ -2811,7 +3144,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     } catch (e) {
       return complete({ handled: true, error: e instanceof Error ? e.message : String(e) });
     }
-  }, [activeLeafId, addNotice, ensureNewSession, handleCompact, isCompacting, loadModels, loadSession, loadSlashCommands, loadTools, promoteNewSession, onOpenSettings, onSessionForked, onSessionStatsPanelOpen, opts.chatInputRef, sessionStats, slashCommandsForMcp, startSideChat]);
+  }, [activeLeafId, addNotice, ensureNewSession, handleCompact, isCompacting, loadModels, loadSession, loadSlashCommands, loadTools, promoteNewSession, onOpenSettings, onSessionForked, onSessionStatsPanelOpen, opts.chatInputRef, sessionStats, slashCommandsForMcp, startSideChat, translate]);
 
   // Let AgentSession.prompt decide atomically whether to queue against the
   // current run or start a new turn if it settled while the request was in
@@ -3091,7 +3424,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
   // dialogs, so their completion and attention notifications reach the page as
   // if it had never let go. Nothing is resent.
   reattachEventStreamRef.current = (sid: string, reason: "visible" | "activity") => {
-    if (!eventStreamReleasedRef.current) return;
+    if (!eventStreamReleasedRef.current || endedSessionRef.current === sid) return;
     eventStreamReleasedRef.current = false;
     reattachDebugRef.current = { count: reattachDebugRef.current.count + 1, lastAt: Date.now(), lastReason: reason };
     setEventStreamReattachCount((count) => count + 1);
@@ -3415,8 +3748,8 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
 
   return {
     // State
-    data, loading, error, activeLeafId, messages, activeToolResults, entryIds, messageKeys, historyCursor, hasEarlierMessages, earlierTurnCount, streamingStore,
-    agentRunning, modelNames, modelList, modelError, missingCwd, modelScopeWarnings, isModelScopeActive, allModelList, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel,
+    data, loading, error, activeLeafId, messages, activeToolResults, toolClocks, entryIds, messageKeys, liveUserEntryIds, historyCursor, hasEarlierMessages, earlierTurnCount, streamingStore,
+    agentRunning, modelNames, modelList, modelError, missingCwd, canForkMissingCwd, modelScopeWarnings, isModelScopeActive, allModelList, modelThinkingLevels, modelThinkingLevelMaps, newSessionModel, toolPreset, thinkingLevel,
     retryInfo, contextUsage, systemPrompt, forkingEntryId,
     isCompacting, compactError, compactResult, currentModel, displayModel, modelSwitching, sessionStats, autoCompactionEnabled,
     slashCommands, slashCommandsLoading, queuedMessages,
@@ -3436,7 +3769,7 @@ export function useAgentSession(opts: UseAgentSessionOptions) {
     sessionIdRef, scrollContainerRef,
     lastUserMsgRef, pendingScrollToUserRef, initialScrollDoneRef,
     // Actions
-    handleSend, handleAbort, startSideChat, handleFork, handleNavigate, handleModelChange,
+    handleSend, handleAbort, startSideChat, handleFork, forkIntoCwd, handleNavigate, handleModelChange,
     handleCompact, handleSteer, handleFollowUp, handlePromptWithStreamingBehavior, handleAbortCompaction,
     dismissCompactError,
     handleRecallQueue,

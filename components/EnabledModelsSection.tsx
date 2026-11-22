@@ -12,6 +12,7 @@ import {
 } from "./enabled-models-helpers";
 import { ConfigButton, ConfigSwitch } from "./SettingsUi";
 import { ModelContextWindow, type ModelContextSettings } from "./ModelContextWindow";
+import { readJsonOrThrow } from "@/lib/fetch-json";
 
 /**
  * Model switches backed by pi's `enabledModels` setting.
@@ -91,8 +92,7 @@ export function useEnabledModels(cwd?: string | null): EnabledModelsController {
     const query = cwd ? `?cwd=${encodeURIComponent(cwd)}` : "";
     fetch(`/api/models/enabled${query}`, { signal: controller.signal })
       .then(async (res) => {
-        const data = await res.json() as EnabledModelsView & { error?: string };
-        if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
+        const data = await readJsonOrThrow<EnabledModelsView>(res);
         setView(data);
         setFailure(null);
       })
@@ -340,8 +340,7 @@ function useCatalogRefresh(providerId: string, onChanged: () => void) {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ provider: providerId }),
         });
-        const data = await res.json() as CatalogRefreshResponse;
-        if (!res.ok || data.error) throw new Error(data.error ?? `HTTP ${res.status}`);
+        const data = await readJsonOrThrow<CatalogRefreshResponse>(res);
         if (data.reason === "offline") setNote("models.catalogOffline");
         else if (!data.completed) setNote("models.catalogUnreachable");
         else setNote(data.changed ? "models.catalogUpdated" : "models.catalogUnchanged");
@@ -363,15 +362,18 @@ export function EnabledModelsSection({
   providerId,
   controller,
   contextSettings,
+  emptyCatalogHint,
 }: {
   providerId: string;
   controller: EnabledModelsController;
   contextSettings?: ModelContextSettings;
+  emptyCatalogHint?: string;
 }) {
   const { t } = useI18n();
   const [query, setQuery] = useState("");
   const { view, loading, pending, failure } = controller;
-  const provider = findProviderView(view, providerId);
+  const provider = findProviderView(view, providerId)
+    ?? (emptyCatalogHint && !failure ? { id: providerId, models: [], enabledCount: 0 } : undefined);
   const catalog = useCatalogRefresh(providerId, controller.refresh);
   const noteId = useId();
 
@@ -457,10 +459,10 @@ export function EnabledModelsSection({
           className="enabled-models-filter"
         />
       )}
-      {contextSettings && <div id={contextNoteId} className="enabled-models-note">{t("models.contextOverrideHelp")}</div>}
+      {contextSettings && provider.models.length > 0 && <div id={contextNoteId} className="enabled-models-note">{t("models.contextOverrideHelp")}</div>}
       <div className="enabled-models-list">
         {shown.length === 0 ? (
-          <div className="enabled-models-empty">{t("models.enabledNoMatches")}</div>
+          <div className="enabled-models-empty">{(provider.models.length === 0 && emptyCatalogHint) || t("models.enabledNoMatches")}</div>
         ) : shown.map((model) => {
           const lastOne = isLastEnabledModel(view, model);
           const override = contextSettings?.overrides?.[model.id];

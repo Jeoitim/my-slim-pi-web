@@ -39,6 +39,7 @@ import { FontSettings } from "./FontSettings";
 import { SettingsSectionIcon } from "./SettingsSectionIcon";
 import { DesktopSettings } from "./DesktopSettings";
 import { useDesktop } from "@/hooks/useDesktop";
+import { readJsonOrThrow } from "@/lib/fetch-json";
 
 interface Props {
   cwd: string | null;
@@ -90,6 +91,8 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
     try {
       const response = await fetch("/api/web-auth", { method: "DELETE" });
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
+      // Unsent text stays in this browser's storage otherwise.
+      clearStoredDrafts();
       window.location.replace("/login");
     } catch {
       setLogoutError(t("auth.logoutFailed"));
@@ -102,8 +105,7 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
     let cancelled = false;
     void fetch("/api/cache-miss-notices")
       .then(async (response) => {
-        const data = await response.json() as { enabled?: boolean; error?: string };
-        if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
+        const data = await readJsonOrThrow<{ enabled?: boolean }>(response);
         if (!cancelled) setCacheMissNotices(data.enabled === true);
       })
       .catch((cause) => {
@@ -122,8 +124,7 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ enabled }),
       });
-      const data = await response.json() as { enabled?: boolean; error?: string };
-      if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
+      const data = await readJsonOrThrow<{ enabled?: boolean }>(response);
       setCacheMissNotices(data.enabled === true);
       if (sessionId) onSessionReloaded();
     } catch (cause) {
@@ -374,9 +375,8 @@ function GeneralSettings({ sessionId, onSessionReloaded, quoteSelectionEnabled, 
 
       <section className="settings-general-section">
         <h3 className="settings-general-heading">{t("settings.pushPermission")}</h3>
-        <p className="settings-general-description">{t("settings.pushPermissionDescription")}</p>
         <div className="settings-shell-option">
-          <span>{t("settings.pushPermission")}</span>
+          <span>{t("settings.pushPermissionDescription")}</span>
           <button
             type="button"
             className="config-button config-button-small config-button-secondary"
@@ -553,6 +553,7 @@ export function SettingsPanel({
   const phone = usePhoneSettingsLevel(isPhone, openAtHome);
   const { dropHistory, enter: enterPhoneLevel, goUp: goUpPhoneLevel, levelRef: phoneLevelRef } = phone;
   const headerRef = useRef<HTMLDivElement>(null);
+  const backdropPressRef = useRef(false);
   const mainRef = useRef<HTMLElement>(null);
   const shownPhoneLevelRef = useRef(phone.level);
   // Before paint, so the new level never shows in place first.
@@ -633,7 +634,15 @@ export function SettingsPanel({
       aria-modal="true"
       aria-label={t("settings.title")}
       tabIndex={-1}
-      onClick={(event) => { if (event.target === event.currentTarget) onClose(); }}
+      onPointerDown={(event) => {
+        backdropPressRef.current = event.target === event.currentTarget;
+      }}
+      onPointerCancel={() => { backdropPressRef.current = false; }}
+      onClick={(event) => {
+        const pressedBackdrop = backdropPressRef.current;
+        backdropPressRef.current = false;
+        if (pressedBackdrop && event.target === event.currentTarget) onClose();
+      }}
       className="settings-dialog-backdrop"
     >
       <div className="settings-dialog-surface">

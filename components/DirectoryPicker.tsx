@@ -3,6 +3,7 @@
 import { type CSSProperties, type FormEvent, useCallback, useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useI18n } from "@/hooks/useI18n";
+import { readJsonOrThrow } from "@/lib/fetch-json";
 
 interface DirectoryEntry {
   name: string;
@@ -67,8 +68,7 @@ const secondaryActionStyle: CSSProperties = {
 async function loadDirectories(directory?: string): Promise<BrowseResponse> {
   const query = directory ? `?path=${encodeURIComponent(directory)}` : "";
   const response = await fetch(`/api/cwd/browse${query}`);
-  const data = await response.json() as BrowseResponse;
-  if (!response.ok || data.error) throw new Error(data.error ?? `HTTP ${response.status}`);
+  const data = await readJsonOrThrow<BrowseResponse>(response);
   return data;
 }
 
@@ -78,10 +78,8 @@ async function createDirectory(parentPath: string, name: string): Promise<string
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ path: parentPath, name }),
   });
-  const data = await response.json() as CreateDirectoryResponse;
-  if (!response.ok || data.error || !data.path) {
-    throw new Error(data.error ?? `HTTP ${response.status}`);
-  }
+  const data = await readJsonOrThrow<CreateDirectoryResponse>(response);
+  if (!data.path) throw new Error(`HTTP ${response.status}`);
   return data.path;
 }
 
@@ -131,8 +129,11 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
   const [creating, setCreating] = useState(false);
   const backdropPressRef = useRef(false);
   const createBackdropPressRef = useRef(false);
+  const pathInputRef = useRef<HTMLInputElement>(null);
+  const mountedRef = useRef(false);
 
-  const navigateTo = useCallback(async (directory?: string) => {
+  // Resolves to the listed folder's path, or null when it could not be listed.
+  const navigateTo = useCallback(async (directory?: string): Promise<string | null> => {
     setLoading(true);
     setLoadError(null);
     try {
@@ -143,8 +144,10 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
       setPathInput(nextPath);
       setDirectories(data.directories ?? []);
       setDrives(data.drives ?? null);
+      return nextPath;
     } catch (cause) {
       setLoadError(cause instanceof Error ? cause.message : String(cause));
+      return null;
     } finally {
       setLoading(false);
     }
@@ -154,6 +157,18 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
     setPortalTarget(document.body);
     void navigateTo(initialPath || undefined);
   }, [initialPath, navigateTo]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => { mountedRef.current = false; };
+  }, []);
+
+  // Select and Go are disabled while they check, which drops focus to the page,
+  // where Escape stops the running agent instead of closing the picker. A
+  // refusal puts focus back in the field, to retype or dismiss.
+  useEffect(() => {
+    if (loadError || error) pathInputRef.current?.focus();
+  }, [loadError, error]);
 
   const handlePathSubmit = (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -188,9 +203,22 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
     }
   };
 
-  const hasUncommittedPath = pathInput.trim() !== currentPath;
-  const canSelect = Boolean(currentPath) && !hasUncommittedPath && !busy && !loading;
+  // A typed path that is not the listed folder needs no Go first: Select browses
+  // it, as Go does, and selects the browse route's realpath, so one folder is
+  // one cwd however it was typed (case, a link, `..`, a trailing slash), like
+  // pi's process.cwd(). A path that cannot be listed shows Go's error here.
+  // "New directory" still waits for the list, which is where it creates.
+  const typedPath = pathInput.trim();
+  const hasUncommittedPath = typedPath !== currentPath;
+  const canSelect = Boolean(typedPath) && !busy && !loading;
+  const canCreate = Boolean(currentPath) && !hasUncommittedPath && !busy && !loading;
   const canNavigateUp = Boolean(parentDirectory) || isWindowsDriveRoot(currentPath);
+
+  const handleSelect = async () => {
+    const path = hasUncommittedPath ? await navigateTo(typedPath) : currentPath;
+    // Cancelled while it browsed: nothing is selected.
+    if (path && mountedRef.current) onSelect(path);
+  };
 
   if (!portalTarget) return null;
 
@@ -216,6 +244,7 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
         backdropPressRef.current = false;
       }}
       onKeyDown={(event) => {
+        if (event.nativeEvent.isComposing || event.keyCode === 229) return;
         if (event.key === "Escape" && !busy) onCancel();
       }}
       style={{ position: "fixed", inset: 0, zIndex: 1000, display: "flex", alignItems: "center", justifyContent: "center", background: "rgba(0,0,0,0.35)" }}
@@ -247,11 +276,12 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
             {t("directoryPicker.directoryPath")}
           </label>
           <input
+            ref={pathInputRef}
             className="directory-picker-path"
             id="directory-path"
             type="text"
             value={pathInput}
-            placeholder="/path/to/project or ~/project"
+            placeholder={t("directoryPicker.pathPlaceholder")}
             autoFocus
             autoComplete="off"
             spellCheck={false}
@@ -323,8 +353,8 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
               setCreateOpen(true);
               setCreateError(null);
             }}
-            disabled={!canSelect}
-            style={{ ...secondaryActionStyle, marginRight: "auto", opacity: canSelect ? 1 : 0.6, cursor: canSelect ? "pointer" : "default" }}
+            disabled={!canCreate}
+            style={{ ...secondaryActionStyle, marginRight: "auto", opacity: canCreate ? 1 : 0.6, cursor: canCreate ? "pointer" : "default" }}
           >
             {t("directoryPicker.newDirectory")}
           </button>
@@ -332,9 +362,9 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
           <button
             className="directory-picker-action"
             type="button"
-            onClick={() => onSelect(currentPath)}
+            onClick={() => void handleSelect()}
             disabled={!canSelect}
-            title={hasUncommittedPath ? t("directoryPicker.openBeforeSelecting") : t("directoryPicker.selectCurrentDirectory")}
+            title={hasUncommittedPath && typedPath ? t("directoryPicker.selectTypedPath", { path: typedPath }) : t("directoryPicker.selectCurrentDirectory")}
             style={{ ...primaryActionStyle, opacity: canSelect ? 1 : 0.6, cursor: canSelect ? "pointer" : "default" }}
           >
             {busy ? t("i18n.checking") : t("directoryPicker.selectThisFolder")}
@@ -357,6 +387,7 @@ export function DirectoryPicker({ onCancel, onSelect, initialPath, busy = false,
             }}
             onKeyDown={(event) => {
               event.stopPropagation();
+              if (event.nativeEvent.isComposing || event.keyCode === 229) return;
               if (event.key === "Escape") closeCreateDialog();
             }}
           >
