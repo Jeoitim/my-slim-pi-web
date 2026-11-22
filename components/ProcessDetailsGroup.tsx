@@ -52,7 +52,7 @@ export function ProcessDetailsGroup({ messageCount, toolCallCount, durationMs, c
   const parts = [`${count} ${t(count === 1 ? "chat.message" : "chat.messages")}`];
   if (tools > 0) parts.push(`${tools} ${t(tools === 1 ? "chat.toolCall" : "chat.toolCalls")}`);
   if (durationMs !== undefined) parts.push(t("chat.turnDuration", { time: formatTurnDuration(durationMs) }));
-  if (cost !== undefined && !open) parts.push(`${cost.toFixed(4)}`);
+  if (cost !== undefined && !open) parts.push(`$${cost.toFixed(4)}`);
   const cacheMissText = cacheMisses && !open ? cacheMissSummaryText(t, cacheMisses) : undefined;
 
   useLayoutEffect(() => { followLatest.current = true; }, [open, folded]);
