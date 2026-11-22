@@ -1,5 +1,4 @@
 "use client";
-import { copyText } from "@/lib/clipboard";
 
 import { type PermissionMode } from "@/lib/permission-mode";
 import { useState, useCallback, useRef, useEffect, useLayoutEffect, useMemo, useReducer } from "react";

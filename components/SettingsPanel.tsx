@@ -39,6 +39,7 @@ import { FontSettings } from "./FontSettings";
 import { SettingsSectionIcon } from "./SettingsSectionIcon";
 import { DesktopSettings } from "./DesktopSettings";
 import { useDesktop } from "@/hooks/useDesktop";
+import { clearStoredDrafts } from "@/lib/draft-store";
 import { readJsonOrThrow } from "@/lib/fetch-json";
 
 interface Props {

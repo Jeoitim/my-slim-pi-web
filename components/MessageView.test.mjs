@@ -198,19 +198,19 @@ test("shows deferred thinking previews without loading the full content", () => 
 });
 
 test("keys a streaming reply by its request identity across reconnects", () => {
-  const source = ts.createSourceFile("ChatWindow.tsx", readFileSync(new URL("./ChatWindow.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const source = ts.createSourceFile("ProcessDetailsGroup.tsx", readFileSync(new URL("./ProcessDetailsGroup.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
   const keys = [];
   (function visit(node) {
     if ((ts.isJsxSelfClosingElement(node) || ts.isJsxOpeningElement(node)) && node.tagName.getText(source) === "MessageView") {
       const attributes = node.attributes.properties.filter(ts.isJsxAttribute);
       if (attributes.some((attribute) => attribute.name.getText(source) === "isStreaming" && !attribute.initializer)) {
         const key = attributes.find((attribute) => attribute.name.getText(source) === "key");
-        keys.push(key?.initializer?.expression?.getText(source));
+        if (key) keys.push(key.initializer?.expression?.getText(source));
       }
     }
     ts.forEachChild(node, visit);
   })(source);
-  assert.deepEqual(keys, ["streamRateKey(message)"]);
+  assert.deepEqual(keys, ["streamRateKey(streaming)"]);
 });
 
 test("keys an assistant message's blocks by their place, not the entry id (#1184)", () => {

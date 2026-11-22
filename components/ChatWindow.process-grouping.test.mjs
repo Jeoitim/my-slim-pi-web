@@ -2,7 +2,9 @@ import assert from "node:assert/strict";
 import { readFileSync } from "node:fs";
 import test from "node:test";
 import ts from "typescript";
-import { splitFinalAssistantBlocks } from "../lib/message-display.ts";
+import { createJiti } from "jiti";
+
+const { splitFinalAssistantBlocks } = await createJiti(import.meta.url).import("../lib/message-display.ts");
 
 const source = ts.createSourceFile("ChatWindow.tsx", readFileSync(new URL("./ChatWindow.tsx", import.meta.url), "utf8"), ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
 const helpers = source.statements.filter(node => ts.isFunctionDeclaration(node)

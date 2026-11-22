@@ -13,7 +13,7 @@ const { SessionSidebar, nearestEnabledKey, handOffDisabledKeyFocus, sameIdsOr } 
 const { buildSessionTree, getRowOffsets, getVisibleRowIndices } = await jiti.import("@/lib/session-tree.ts");
 const { SIDEBAR_DEFAULT_WIDTH, SIDEBAR_MIN_WIDTH } = await jiti.import("@/lib/panel-layout.ts");
 
-const source = await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8");
+const source = (await readFile(new URL("./SessionSidebar.tsx", import.meta.url), "utf8")).replaceAll("\r\n", "\n");
 const globalStyles = await readFile(new URL("../app/globals.css", import.meta.url), "utf8");
 const sidebarStyles = await readFile(new URL("../app/sidebar.css", import.meta.url), "utf8");
 const explorerSource = await readFile(new URL("./FileExplorer.tsx", import.meta.url), "utf8");
